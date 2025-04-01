@@ -65,19 +65,19 @@ public class SentimentSegment {
     public int aggression;
     public int stress;
     public int uncertainty;
-    public int excitement;
+    public int excitement; //使う 興奮
     public int concentration;
     public int emo_cog;
-    public int hesitation;
+    public int hesitation; //使う ためらい
     public int brain_power;
     public int embarrassment;
     public int intensive_thinking;
     public int imagination_activity;
     public int extreme_emotion;
     public int passionate;
-    public int atmosphere;
-    public int anticipation;
-    public int dissatisfaction;
+    public int atmosphere; //使う 雰囲気会話傾向
+    public int anticipation; //使う 期待
+    public int dissatisfaction; //使う 不満
     public int confidence;
 }
 
