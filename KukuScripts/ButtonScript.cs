@@ -10,6 +10,9 @@ using System.Text;
 
 public class ButtonScript : MonoBehaviour
 {
+    [Header("GameController Reference")]
+    public GameController gameController;
+
     // Inspectorで必ずアタッチする
     [Header("UI Elements (Assign in Inspector)")]
     public Button sendButton;
@@ -170,6 +173,16 @@ public class ButtonScript : MonoBehaviour
                     {
                         json.text = "Poll Job waiting... 3/3";
                         Debug.Log("音声認識完了！");
+
+                        if (gameController != null)
+                        {
+                            gameController.SetParametersFromJson(request.downloadHandler.text);
+                            Debug.Log("感情パラメータをGameControllerに送信しました");
+                        }
+                        else
+                        {
+                            Debug.LogError("GameControllerが見つかりません！");
+                        }
 
                         StringBuilder sb = new StringBuilder();
                         if (response != null && response.segments != null)

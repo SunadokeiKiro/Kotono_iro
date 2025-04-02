@@ -96,6 +96,7 @@ public class GameController : MonoBehaviour
             float excitement = (float)seg.excitement;
             float anticipation = (float)seg.anticipation;
             float hesitation = (float)seg.hesitation;
+            float atmosphere = (float)seg.atmosphere;
 
             dissatisfaction = dissatisfaction / 5.0f;
 
@@ -108,7 +109,7 @@ public class GameController : MonoBehaviour
                 excitement = 0.0f;
             }
 
-            anticipation = anticipation / 5.0f;
+            anticipation = anticipation / 13.3f;
 
             if (hesitation > 15.0f)
             {
@@ -117,6 +118,29 @@ public class GameController : MonoBehaviour
             else
             {
                 hesitation = 0.0f;
+            }
+
+            if (atmosphere != 0.0f)
+            {
+                if (atmosphere >= 1.0f)
+                {
+                    if (atmosphere > 10.0f)
+                    {
+                        atmosphere = 10.0f;
+                    }
+                    excitement = excitement * (1.0f + atmosphere * 0.1f); 
+                    anticipation = anticipation * (1.0f + anticipation * 0.1f);
+                }
+                else
+                {
+                    atmosphere = atmosphere * -1.0f;
+                    if (atmosphere > 10.0f)
+                    {
+                        atmosphere = 10.0f;
+                    }
+                    dissatisfaction = dissatisfaction * (1.0f + dissatisfaction * 0.1f);
+                    hesitation = hesitation * (1.0f + hesitation * 0.1f);
+                }
             }
 
 
