@@ -90,26 +90,79 @@ public class GameController : MonoBehaviour
         {
             SentimentSegment seg = response.sentiment_analysis.segments[0];
 
-            // パラメータをいじる場所
+            // int型からfloat型へ変換
+            float energy = (float)seg.energy;
+            float dissatisfaction = (float)seg.dissatisfaction;
+            float excitement = (float)seg.excitement;
+            float anticipation = (float)seg.anticipation;
+            float hesitation = (float)seg.hesitation;
+            float atmosphere = (float)seg.atmosphere;
+
+            dissatisfaction = dissatisfaction / 5.0f;
+
+            if (excitement > 15.0f)
+            {
+                excitement = (excitement - 15.0f) / 2.5f;
+            }
+            else
+            {
+                excitement = 0.0f;
+            }
+
+            anticipation = anticipation / 13.3f;
+
+            if (hesitation > 15.0f)
+            {
+                hesitation = (hesitation - 15.0f) / 2.5f;
+            }
+            else
+            {
+                hesitation = 0.0f;
+            }
+
+            if (atmosphere != 0.0f)
+            {
+                if (atmosphere >= 1.0f)
+                {
+                    if (atmosphere > 10.0f)
+                    {
+                        atmosphere = 10.0f;
+                    }
+                    excitement = excitement * (1.0f + atmosphere * 0.1f); 
+                    anticipation = anticipation * (1.0f + anticipation * 0.1f);
+                }
+                else
+                {
+                    atmosphere = atmosphere * -1.0f;
+                    if (atmosphere > 10.0f)
+                    {
+                        atmosphere = 10.0f;
+                    }
+                    dissatisfaction = dissatisfaction * (1.0f + dissatisfaction * 0.1f);
+                    hesitation = hesitation * (1.0f + hesitation * 0.1f);
+                }
+            }
+
+
 
             // 任意の感情パラメータとGameControllerのパラメータをマッピング
             // ストレスの値とか、高かったら生成半径を狭めてもいいかも
-            parameterA = seg.energy;
-            parameterB = seg.excitement;
-            parameterC = seg.upset;
-            parameterD = seg.aggression;
-            parameterE = seg.stress;
-            parameterF = seg.uncertainty;
-            parameterG = seg.concentration;
+            parameterA = energy;
+            //parameterB;
+            parameterC = dissatisfaction;
+            parameterD = excitement;
+            parameterE = anticipation;
+            //parameterF;
+            parameterG = hesitation;
 
             Debug.Log("パラメータを更新しました: " +
                 "\nparameterA (energy): " + parameterA +
-                "\nparameterB (excitement): " + parameterB +
-                "\nparameterC (upset): " + parameterC +
-                "\nparameterD (aggression): " + parameterD +
-                "\nparameterE (stress): " + parameterE +
-                "\nparameterF (uncertainty): " + parameterF +
-                "\nparameterG (concentration): " + parameterG);
+                "\nparameterB (null): " + parameterB +
+                "\nparameterC (dissatisfaction): " + parameterC +
+                "\nparameterD (excitement): " + parameterD +
+                "\nparameterE (anticipation): " + parameterE +
+                "\nparameterF (null): " + parameterF +
+                "\nparameterG (hesitation): " + parameterG);
         }
         else
         {
