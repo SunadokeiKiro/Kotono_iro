@@ -21,7 +21,6 @@ public class GameController : MonoBehaviour
     [Header("各モデル生成パラメーター (初期値)")]
     public float parameterA = 3.0f;
     public float parameterB = 3.0f;
-
     public float parameterC = 3.0f;
     public float parameterD = 3.0f;
     public float parameterE = 3.0f;
@@ -31,9 +30,14 @@ public class GameController : MonoBehaviour
     [Header("生成半径（候補点取得時の閾値）")]
     public float generationThreshold = 0.3f;
 
-    [Header("拡大倍率")]
-    public float enlargeFactor = 1.5f;      // モデルB～G用
-    public float enlargeFactorAlt = 1.4f;  // モデルA用
+    [Header("各モデルの拡大倍率")]
+    public float enlargeFactorA = 1.4f;  // モデルA用
+    public float enlargeFactorB = 1.5f;  // モデルB用
+    public float enlargeFactorC = 1.5f;  // モデルC用
+    public float enlargeFactorD = 1.5f;  // モデルD用
+    public float enlargeFactorE = 1.5f;  // モデルE用
+    public float enlargeFactorF = 1.5f;  // モデルF用
+    public float enlargeFactorG = 1.5f;  // モデルG用
 
     // ── 各モデル生成後の管理リスト ──
     private List<GameObject> attachedModelsA = new List<GameObject>();
@@ -148,11 +152,11 @@ public class GameController : MonoBehaviour
             // 任意の感情パラメータとGameControllerのパラメータをマッピング
             // ストレスの値とか、高かったら生成半径を狭めてもいいかも
             parameterA = energy;
-            //parameterB;
+            parameterB = 0.0f;
             parameterC = dissatisfaction;
             parameterD = excitement;
             parameterE = anticipation;
-            //parameterF;
+            parameterF = 0.0f;
             parameterG = hesitation;
 
             Debug.Log("パラメータを更新しました: " +
@@ -404,21 +408,19 @@ public class GameController : MonoBehaviour
 
     void ScaleUpModels()
     {
-        // モデルAは別の倍率で拡大
-        ScaleModelList(attachedModelsA, enlargeFactorAlt);
+        // 各モデルを個別の拡大倍率で拡大
+        ScaleModelList(attachedModelsA, enlargeFactorA);
+        ScaleModelList(attachedModelsB, enlargeFactorB);
+        ScaleModelList(attachedModelsC, enlargeFactorC);
+        ScaleModelList(attachedModelsD, enlargeFactorD);
+        ScaleModelList(attachedModelsE, enlargeFactorE);
+        ScaleModelList(attachedModelsF, enlargeFactorF);
+        ScaleModelList(attachedModelsG, enlargeFactorG);
 
-        // モデルB～Gも同様に拡大
-        ScaleModelList(attachedModelsB, enlargeFactor);
-        ScaleModelList(attachedModelsC, enlargeFactor);
-        ScaleModelList(attachedModelsD, enlargeFactor);
-        ScaleModelList(attachedModelsE, enlargeFactor);
-        ScaleModelList(attachedModelsF, enlargeFactor);
-        ScaleModelList(attachedModelsG, enlargeFactor);
-
-        Debug.Log("すべてのモデルを拡大しました！");
+        Debug.Log("すべてのモデルを拡大しました！各モデルごとに個別の拡大倍率が適用されました。");
     }
 
-    // 新しいヘルパーメソッドを追加
+    // 拡大用ヘルパーメソッド
     void ScaleModelList(List<GameObject> modelList, float scaleFactor)
     {
         foreach (GameObject model in modelList)
