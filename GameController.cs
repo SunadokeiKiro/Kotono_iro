@@ -102,6 +102,8 @@ public class GameController : MonoBehaviour
             float hesitation = (float)seg.hesitation;
             float atmosphere = (float)seg.atmosphere;
 
+            energy = energy / 2;
+
             dissatisfaction = dissatisfaction / 5.0f;
 
             if (excitement > 15.0f)
@@ -159,14 +161,15 @@ public class GameController : MonoBehaviour
             parameterF = 0.0f;
             parameterG = hesitation;
 
-            Debug.Log("パラメータを更新しました: " +
-                "\nparameterA (energy): " + parameterA +
-                "\nparameterB (null): " + parameterB +
-                "\nparameterC (dissatisfaction): " + parameterC +
-                "\nparameterD (excitement): " + parameterD +
-                "\nparameterE (anticipation): " + parameterE +
-                "\nparameterF (null): " + parameterF +
-                "\nparameterG (hesitation): " + parameterG);
+            enlargeFactorA = 1.0f + energy / 300.0f;
+            enlargeFactorB = 1.0f + 0.0f;
+            enlargeFactorC = 1.0f + dissatisfaction / 100.0f;
+            enlargeFactorD = 1.0f + excitement / 100.0f;
+            enlargeFactorE = 1.0f + anticipation / 100.0f;
+            enlargeFactorF = 1.0f + 0.0f;
+            enlargeFactorG = 1.0f + hesitation / 100.0f;
+
+            Debug.Log("パラメータを更新しました");
         }
         else
         {
