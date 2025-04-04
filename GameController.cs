@@ -1,9 +1,53 @@
 using UnityEngine;
 using UnityEngine.UI;
 using System.Collections.Generic;
+using System.IO;
+
+// オブジェクト情報を保存するためのクラス
+[System.Serializable]
+public class SavedObjectData
+{
+    public string prefabName;
+    public Vector3 position;
+    public Quaternion rotation;
+    public Vector3 scale;
+    public string type; // "main", "A", "B", "C", ... など
+    public int prefabIndex;
+}
+
+[System.Serializable]
+public class SceneData
+{
+    public List<SavedObjectData> objects = new List<SavedObjectData>();
+    public float parameterA;
+    public float parameterB;
+    public float parameterC;
+    public float parameterD;
+    public float parameterE;
+    public float parameterF;
+    public float parameterG;
+    public float enlargeFactorA;
+    public float enlargeFactorB;
+    public float enlargeFactorC;
+    public float enlargeFactorD;
+    public float enlargeFactorE;
+    public float enlargeFactorF;
+    public float enlargeFactorG;
+    public float generationThreshold;
+    public int mainObjectIndex = -1; // メインオブジェクトのインデックス（-1は未選択）
+}
+
 
 public class GameController : MonoBehaviour
 {
+    // ファイルパスの定数
+    private string saveFilePath;
+    private const string saveFileName = "glass_art_save.json";
+
+    // ボタン追加
+    public Button buttonSave;
+    public Button buttonLoad;
+
     // ── メインオブジェクト用Prefab配列 ──
     public GameObject[] glassPrefabs;
 
@@ -81,9 +125,253 @@ public class GameController : MonoBehaviour
         button2.onClick.AddListener(ScaleUpModels);
         button3.onClick.AddListener(DeleteAllObjects);
 
-        buttonGallery.onClick.AddListener(MoveToGallery);
-        buttonSettings.onClick.AddListener(MoveToSettings);
+        //buttonGallery.onClick.AddListener(MoveToGallery);
+        //buttonSettings.onClick.AddListener(MoveToSettings);
+
+        // ボタンの参照チェック
+        Debug.Log($"Save Button is null: {buttonSave == null}, Load Button is null: {buttonLoad == null}");
+
+        // 新規ボタンのリスナー追加
+        if (buttonSave != null) buttonSave.onClick.AddListener(SaveScene);
+        if (buttonLoad != null) buttonLoad.onClick.AddListener(LoadScene);
+        
+        // 保存ファイルパスの設定
+        saveFilePath = Path.Combine(Application.persistentDataPath, saveFileName);
+        Debug.Log($"保存ファイルパス: {saveFilePath}");
+
+        // Start() メソッド内で保存ファイルパスを設定した後に追加
+        if (File.Exists(saveFilePath))
+        {
+            Debug.Log($"保存ファイルが見つかりました: {saveFilePath}");
+            string fileContent = File.ReadAllText(saveFilePath);
+            Debug.Log($"ファイル内容の一部: {fileContent.Substring(0, System.Math.Min(100, fileContent.Length))}");
+        }
+        else
+        {
+            Debug.Log($"保存ファイルが見つかりません: {saveFilePath}");
+        }
+
+        if (File.Exists(saveFilePath))
+        {
+            LoadScene();
+        }
     }
+
+    // シーンを保存するメソッド
+    public void SaveScene()
+    {
+        if (currentMainObject == null)
+        {
+            Debug.LogWarning("保存するメインオブジェクトがありません！");
+            return;
+        }
+
+        SceneData sceneData = new SceneData();
+
+        // パラメータを保存
+        sceneData.parameterA = parameterA;
+        sceneData.parameterB = parameterB;
+        sceneData.parameterC = parameterC;
+        sceneData.parameterD = parameterD;
+        sceneData.parameterE = parameterE;
+        sceneData.parameterF = parameterF;
+        sceneData.parameterG = parameterG;
+        sceneData.enlargeFactorA = enlargeFactorA;
+        sceneData.enlargeFactorB = enlargeFactorB;
+        sceneData.enlargeFactorC = enlargeFactorC;
+        sceneData.enlargeFactorD = enlargeFactorD;
+        sceneData.enlargeFactorE = enlargeFactorE;
+        sceneData.enlargeFactorF = enlargeFactorF;
+        sceneData.enlargeFactorG = enlargeFactorG;
+        sceneData.generationThreshold = generationThreshold;
+
+        // メインオブジェクトの情報を保存
+        SavedObjectData mainObjectData = new SavedObjectData
+        {
+            position = currentMainObject.transform.position,
+            rotation = currentMainObject.transform.rotation,
+            scale = currentMainObject.transform.localScale,
+            type = "main"
+        };
+
+        // メインオブジェクトのプレハブ名とインデックスを特定
+        for (int i = 0; i < glassPrefabs.Length; i++)
+        {
+            if (currentMainObject.name.Contains(glassPrefabs[i].name))
+            {
+                mainObjectData.prefabName = glassPrefabs[i].name;
+                mainObjectData.prefabIndex = i;
+                sceneData.mainObjectIndex = i;
+                break;
+            }
+        }
+
+        sceneData.objects.Add(mainObjectData);
+
+        // 各モデルの情報を保存
+        SaveModelList(attachedModelsA, "A", modelAPrefabs, sceneData.objects);
+        SaveModelList(attachedModelsB, "B", modelBPrefabs, sceneData.objects);
+        SaveModelList(attachedModelsC, "C", modelCPrefabs, sceneData.objects);
+        SaveModelList(attachedModelsD, "D", modelDPrefabs, sceneData.objects);
+        SaveModelList(attachedModelsE, "E", modelEPrefabs, sceneData.objects);
+        SaveModelList(attachedModelsF, "F", modelFPrefabs, sceneData.objects);
+        SaveModelList(attachedModelsG, "G", modelGPrefabs, sceneData.objects);
+
+        // データをJSONに変換
+        string jsonData = JsonUtility.ToJson(sceneData, true);
+        
+        // ファイルに保存
+        File.WriteAllText(saveFilePath, jsonData);
+        Debug.Log($"保存したJSONデータ: {jsonData}");
+        
+        Debug.Log($"シーンを保存しました: {saveFilePath}");
+    }
+
+    // モデルリストの情報を保存するヘルパーメソッド
+    void SaveModelList(List<GameObject> modelList, string type, GameObject[] prefabs, List<SavedObjectData> objectsList)
+    {
+        foreach (GameObject model in modelList)
+        {
+            if (model == null) continue;
+            
+            SavedObjectData modelData = new SavedObjectData
+            {
+                position = model.transform.position,
+                rotation = model.transform.rotation,
+                scale = model.transform.localScale,
+                type = type
+            };
+            
+            // プレハブ名とインデックスを特定
+            for (int i = 0; i < prefabs.Length; i++)
+            {
+                if (model.name.Contains(prefabs[i].name))
+                {
+                    modelData.prefabName = prefabs[i].name;
+                    modelData.prefabIndex = i;
+                    break;
+                }
+            }
+            
+            objectsList.Add(modelData);
+        }
+    }
+
+    // 保存されたシーンを読み込むメソッド
+    public void LoadScene()
+    {
+        if (!File.Exists(saveFilePath))
+        {
+            Debug.LogWarning($"保存ファイルが見つかりません: {saveFilePath}");
+            return;
+        }
+        
+        // 現在のオブジェクトをすべて削除
+        DeleteAllObjects();
+        
+        // ファイルからJSONを読み込み
+        string jsonData = File.ReadAllText(saveFilePath);
+        SceneData sceneData = JsonUtility.FromJson<SceneData>(jsonData);
+        
+        if (sceneData == null)
+        {
+            Debug.LogError("保存データの読み込みに失敗しました");
+            return;
+        }
+
+        // パラメータを復元
+        parameterA = sceneData.parameterA;
+        parameterB = sceneData.parameterB;
+        parameterC = sceneData.parameterC;
+        parameterD = sceneData.parameterD;
+        parameterE = sceneData.parameterE;
+        parameterF = sceneData.parameterF;
+        parameterG = sceneData.parameterG;
+        enlargeFactorA = sceneData.enlargeFactorA;
+        enlargeFactorB = sceneData.enlargeFactorB;
+        enlargeFactorC = sceneData.enlargeFactorC;
+        enlargeFactorD = sceneData.enlargeFactorD;
+        enlargeFactorE = sceneData.enlargeFactorE;
+        enlargeFactorF = sceneData.enlargeFactorF;
+        enlargeFactorG = sceneData.enlargeFactorG;
+        generationThreshold = sceneData.generationThreshold;
+
+        // オブジェクトを復元
+        foreach (SavedObjectData objData in sceneData.objects)
+        {
+            if (objData.type == "main" && sceneData.mainObjectIndex >= 0 && sceneData.mainObjectIndex < glassPrefabs.Length)
+            {
+                // メインオブジェクトを復元
+                currentMainObject = Instantiate(
+                    glassPrefabs[sceneData.mainObjectIndex], 
+                    objData.position,
+                    objData.rotation
+                );
+                currentMainObject.transform.localScale = objData.scale;
+            }
+            else
+            {
+                // 各モデルを復元
+                GameObject[] prefabArray = GetPrefabArrayByType(objData.type);
+                List<GameObject> modelList = GetModelListByType(objData.type);
+                
+                if (prefabArray != null && objData.prefabIndex >= 0 && objData.prefabIndex < prefabArray.Length)
+                {
+                    GameObject newModel = Instantiate(
+                        prefabArray[objData.prefabIndex],
+                        objData.position,
+                        objData.rotation
+                    );
+                    newModel.transform.localScale = objData.scale;
+                    
+                    if (currentMainObject != null)
+                    {
+                        newModel.transform.SetParent(currentMainObject.transform);
+                    }
+                    
+                    if (modelList != null)
+                    {
+                        modelList.Add(newModel);
+                    }
+                }
+            }
+        }
+
+        Debug.Log("シーンを読み込みました");
+    }
+
+    // タイプに基づいてプレハブ配列を取得するヘルパーメソッド
+    GameObject[] GetPrefabArrayByType(string type)
+    {
+        switch (type)
+        {
+            case "A": return modelAPrefabs;
+            case "B": return modelBPrefabs;
+            case "C": return modelCPrefabs;
+            case "D": return modelDPrefabs;
+            case "E": return modelEPrefabs;
+            case "F": return modelFPrefabs;
+            case "G": return modelGPrefabs;
+            default: return null;
+        }
+    }
+
+    // タイプに基づいてモデルリストを取得するヘルパーメソッド
+    List<GameObject> GetModelListByType(string type)
+    {
+        switch (type)
+        {
+            case "A": return attachedModelsA;
+            case "B": return attachedModelsB;
+            case "C": return attachedModelsC;
+            case "D": return attachedModelsD;
+            case "E": return attachedModelsE;
+            case "F": return attachedModelsF;
+            case "G": return attachedModelsG;
+            default: return null;
+        }
+    }
+
 
     // このメソッドを感情データ受信後に呼び出す
     public void SetParametersFromJson(string jsonData)
