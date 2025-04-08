@@ -18,11 +18,10 @@ public class ButtonScript : MonoBehaviour
     public Button sendButton;
     public Button sampleButton;  // 必要であれば利用
     public Button recButton;
-    public Button saveApiKeyButton; // APIキーを保存するボタン
     public GameObject recSec;    // 録音秒数を表示・入力するTextが含まれるオブジェクト
-    public InputField apiKeyInput; // APIキー入力用フィールド
     public InputField json;      // APIの進捗などを表示
     public InputField jsontext;  // 結果データを表示
+    public Button settingsButton;
 
     private string apiUrl = "https://acp-api-async.amivoice.com/v1/recognitions";
     private string sampleUrl = "https://acp-dsrpp.amivoice.com/v1/sentiment-analysis/ja/result-parameters.json";
@@ -37,13 +36,18 @@ public class ButtonScript : MonoBehaviour
     void Start()
     {
         // 手動アタッチが正しく行われているか確認
-        if (sendButton == null || recButton == null || json == null || jsontext == null || recSec == null || apiKeyInput == null)
+        if (sendButton == null || recButton == null || json == null || jsontext == null || recSec == null)
         {
             Debug.LogError("InspectorにUI要素が正しく割り当てられていません。各フィールドを確認してください。");
             return;
         }
 
         json.text = "Start";
+
+        if (settingsButton != null)
+        {
+            settingsButton.onClick.AddListener(OpenSettingsScene);
+        }
 
         // マイクの設定
         microphone = Microphone.devices.FirstOrDefault();
@@ -54,14 +58,15 @@ public class ButtonScript : MonoBehaviour
             return;
         }
 
-        // APIキーファイルのパスを設定
-        apiKeyFilePath = Path.Combine(Application.persistentDataPath, "apikey.txt");
-        
-        // 保存されたAPIキーがあれば読み込む
-        LoadApiKey();
+        // StreamingAssetsフォルダ内のファイルパスを取得
+        apiKeyFilePath = Path.Combine(Application.streamingAssetsPath, "apikey.txt");
 
         // プラットフォーム別にファイル保存先を設定
-        if (Application.platform == RuntimePlatform.Android || Application.platform == RuntimePlatform.IPhonePlayer)
+        if (Application.platform == RuntimePlatform.Android)
+        {
+            audioFilePath = Path.Combine(Application.persistentDataPath, "test.wav");
+        }
+        else if (Application.platform == RuntimePlatform.IPhonePlayer)
         {
             audioFilePath = Path.Combine(Application.persistentDataPath, "test.wav");
         }
@@ -70,74 +75,99 @@ public class ButtonScript : MonoBehaviour
             audioFilePath = Path.Combine(Application.streamingAssetsPath, "test.wav");
         }
 
-        // ボタンのクリックイベントにリスナーを設定
-        sendButton.onClick.AddListener(() => StartCoroutine(PostRequestWithInputApiKey()));
+        // ボタンのクリックイベントにリスナーを設定（手動アタッチ済みのため直接利用）
+        sendButton.onClick.AddListener(() => StartCoroutine(ReadApiKeyAndPostRequest()));
         recButton.onClick.AddListener(() => StartCoroutine(StartRec()));
-        
-        // APIキー保存ボタンがアタッチされている場合
-        if (saveApiKeyButton != null)
-        {
-            saveApiKeyButton.onClick.AddListener(SaveApiKey);
-        }
     }
 
-    // 入力されたAPIキーを使用してリクエストを送信
-    IEnumerator PostRequestWithInputApiKey()
+    void OpenSettingsScene()
     {
-        json.text = "Post Requesting...";
-        
-        // APIキーが入力されているか確認
-        if (string.IsNullOrEmpty(apiKeyInput.text))
-        {
-            json.text = "ERROR: APIキーが入力されていません";
-            Debug.LogError("APIキーが入力されていません");
-            yield break;
-        }
-        
-        // リクエスト送信
-        yield return StartCoroutine(PostRequest(apiKeyInput.text.Trim()));
+        SceneManager.LoadScene("SettingScene");
     }
 
-    // 保存されたAPIキーを読み込む
-    void LoadApiKey()
+    // APIキーを読み込む（Start内から呼び出す）
+    private string LoadApiKey()
     {
+        string apiKey = "";
         try
         {
+            string apiKeyFilePath = Path.Combine(Application.persistentDataPath, "apikey.txt");
             if (File.Exists(apiKeyFilePath))
             {
-                string savedApiKey = File.ReadAllText(apiKeyFilePath).Trim();
-                apiKeyInput.text = savedApiKey;
+                apiKey = File.ReadAllText(apiKeyFilePath).Trim();
                 Debug.Log("保存されたAPIキーを読み込みました");
+            }
+            else
+            {
+                Debug.LogError("APIキーファイルが見つかりません: " + apiKeyFilePath);
+                json.text = "ERROR: APIキーが設定されていません。設定画面で設定してください。";
             }
         }
         catch (Exception e)
         {
             Debug.LogError("APIキーの読み込みに失敗: " + e.Message);
         }
+        return apiKey;
     }
 
-    // APIキーを保存する
-    void SaveApiKey()
+    // PostRequestWithInputApiKeyをPostRequestWithLoadedApiKeyに変更
+    IEnumerator PostRequestWithLoadedApiKey()
     {
-        try
+        json.text = "Post Requesting...";
+        
+        // APIキーをファイルから読み込む
+        string apiKey = LoadApiKey();
+        
+        // APIキーが読み込めなかった場合
+        if (string.IsNullOrEmpty(apiKey))
         {
-            if (!string.IsNullOrEmpty(apiKeyInput.text))
+            json.text = "ERROR: APIキーが設定されていません。設定画面で設定してください。";
+            Debug.LogError("APIキーが設定されていません");
+            yield break;
+        }
+        
+        // リクエスト送信
+        yield return StartCoroutine(PostRequest(apiKey));
+    }
+
+    IEnumerator ReadApiKeyAndPostRequest()
+    {
+        json.text = "Post Requesting...";
+        string apiKey = "";
+
+        // StreamingAssets から API キーを読み込む（Android でも対応）
+        if (apiKeyFilePath.StartsWith("http") || Application.platform == RuntimePlatform.Android)
+        {
+            using (UnityWebRequest request = UnityWebRequest.Get(apiKeyFilePath))
             {
-                File.WriteAllText(apiKeyFilePath, apiKeyInput.text.Trim());
-                Debug.Log("APIキーを保存しました: " + apiKeyFilePath);
-                json.text = "APIキーを保存しました";
+                yield return request.SendWebRequest();
+
+                if (request.result == UnityWebRequest.Result.Success)
+                {
+                    apiKey = request.downloadHandler.text.Trim();
+                }
+                else
+                {
+                    Debug.LogError("APIキーの取得に失敗: " + request.error);
+                    yield break;
+                }
+            }
+        }
+        else
+        {
+            if (File.Exists(apiKeyFilePath))
+            {
+                apiKey = File.ReadAllText(apiKeyFilePath).Trim();
             }
             else
             {
-                Debug.LogError("保存するAPIキーが入力されていません");
-                json.text = "ERROR: APIキーが入力されていません";
+                Debug.LogError("APIキーのファイルが見つかりません: " + apiKeyFilePath);
+                yield break;
             }
         }
-        catch (Exception e)
-        {
-            Debug.LogError("APIキーの保存に失敗: " + e.Message);
-            json.text = "ERROR: APIキーの保存に失敗";
-        }
+
+        // リクエスト送信
+        yield return StartCoroutine(PostRequest(apiKey));
     }
 
     IEnumerator PostRequest(string apiKey)

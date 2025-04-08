@@ -77,6 +77,6 @@ public class SettingsManager : MonoBehaviour
     void GoBackToMainScene()
     {
         // メインシーンに戻る（シーン名は実際のメインシーン名に変更する）
-        SceneManager.LoadScene("MainScene");
+        SceneManager.LoadScene("KotonoGem");
     }
 }
