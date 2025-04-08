@@ -105,8 +105,8 @@ public class GameController : MonoBehaviour
     public Button buttonAll;
     public Button button2;
     public Button button3;
-    public Button buttonGallery;
-    public Button buttonSettings;
+    //public Button buttonGallery;
+    //public Button buttonSettings;
 
     private GameObject currentMainObject;
 
