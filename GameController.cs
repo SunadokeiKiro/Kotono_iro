@@ -63,25 +63,25 @@ public class GameController : MonoBehaviour
 
     // ── 制御用パラメーター（初期値） ──
     [Header("各モデル生成パラメーター (初期値)")]
-    public float parameterA = 3.0f;
-    public float parameterB = 3.0f;
-    public float parameterC = 3.0f;
-    public float parameterD = 3.0f;
-    public float parameterE = 3.0f;
-    public float parameterF = 3.0f;
-    public float parameterG = 3.0f;
+    public float parameterA = 0.0f;
+    public float parameterB = 0.0f;
+    public float parameterC = 0.0f;
+    public float parameterD = 0.0f;
+    public float parameterE = 0.0f;
+    public float parameterF = 0.0f;
+    public float parameterG = 0.0f;
 
     [Header("生成半径（候補点取得時の閾値）")]
     public float generationThreshold = 0.3f;
 
     [Header("各モデルの拡大倍率")]
-    public float enlargeFactorA = 1.4f;  // モデルA用
-    public float enlargeFactorB = 1.5f;  // モデルB用
-    public float enlargeFactorC = 1.5f;  // モデルC用
-    public float enlargeFactorD = 1.5f;  // モデルD用
-    public float enlargeFactorE = 1.5f;  // モデルE用
-    public float enlargeFactorF = 1.5f;  // モデルF用
-    public float enlargeFactorG = 1.5f;  // モデルG用
+    public float enlargeFactorA = 0.0f;  // モデルA用
+    public float enlargeFactorB = 0.0f;  // モデルB用
+    public float enlargeFactorC = 0.0f;  // モデルC用
+    public float enlargeFactorD = 0.0f;  // モデルD用
+    public float enlargeFactorE = 0.0f;  // モデルE用
+    public float enlargeFactorF = 0.0f;  // モデルF用
+    public float enlargeFactorG = 0.0f;  // モデルG用
 
     // ── 各モデル生成後の管理リスト ──
     private List<GameObject> attachedModelsA = new List<GameObject>();
