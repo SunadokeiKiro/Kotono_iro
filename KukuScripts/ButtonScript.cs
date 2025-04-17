@@ -14,18 +14,22 @@ public class ButtonScript : MonoBehaviour
     [Header("GameController Reference")]
     public GameController gameController;
 
+    // Inspectorで必ずアタッチする
     [Header("UI Elements (Assign in Inspector)")]
     public Button sendButton;
-    public Button sampleButton;
+    public Button sampleButton;  // 必要であれば利用
     public Button recButton;
-    public Button autoRecButton;
-    public GameObject recSec;
-    public InputField json;
-    public InputField jsontext;
+    public GameObject recSec;    // 録音秒数を表示・入力するTextが含まれるオブジェクト
+    public InputField json;      // APIの進捗などを表示
+    public InputField jsontext;  // 結果データを表示
     public Button settingsButton;
-    public Toggle vadToggle;
-    public Slider vadThresholdSlider;
-    public Text statusText;
+    
+    // 自動録音用のUI要素
+    [Header("Auto Recording Settings")]
+    public Toggle autoRecordToggle;
+    public Text autoRecordStatusText;
+    public float voiceDetectionThreshold = 0.02f;
+    public float silenceDetectionTime = 2.0f;  // 無音検出までの時間（秒）
 
     private string apiUrl = "https://acp-api-async.amivoice.com/v1/recognitions";
     private string sampleUrl = "https://acp-dsrpp.amivoice.com/v1/sentiment-analysis/ja/result-parameters.json";
@@ -36,30 +40,17 @@ public class ButtonScript : MonoBehaviour
     private AudioClip microphoneInput;
     private int RECORD_LENGTH_SEC = 20;
     private const int SAMPLE_RATE = 41100;
-
-    // WebRTC VAD
-    private bool isVadEnabled = false;
-    private bool isListening = false;
-    private bool isSpeaking = false;
-    private float vadThreshold = 0.3f;
-    private float silenceThreshold = 1.0f;
-    private float currentSilenceTime = 0f;
-    private float speakingTimeoutDuration = 30f;
-    private float speakingStartTime = 0f;
-    private AudioClip listeningClip;
-    private List<float> audioBuffer = new List<float>();
-    private int bufferSize = 1024;
-    private WebRTCVad vad;
-
-    private const int VAD_SAMPLE_RATE = 16000;
-    private const int VAD_FRAME_SIZE = 480;
-    private float[] vadBuffer;
-    private int vadBufferPosition = 0;
-    private int aggressiveness = 2;
-    private List<float> recordedSamples = new List<float>();
+    
+    // 自動録音用の変数
+    private bool isAutoRecordEnabled = false;
+    private bool isListeningForVoice = false;
+    private bool isRecording = false;
+    private float[] samples = new float[128];
+    private float lastVoiceDetectedTime = 0f;
 
     void Start()
     {
+        // 手動アタッチが正しく行われているか確認
         if (sendButton == null || recButton == null || json == null || jsontext == null || recSec == null)
         {
             Debug.LogError("InspectorにUI要素が正しく割り当てられていません。各フィールドを確認してください。");
@@ -73,6 +64,7 @@ public class ButtonScript : MonoBehaviour
             settingsButton.onClick.AddListener(OpenSettingsScene);
         }
 
+        // マイクの設定
         microphone = Microphone.devices.FirstOrDefault();
         Debug.Log("microphone: " + microphone);
         if (microphone == null)
@@ -81,9 +73,15 @@ public class ButtonScript : MonoBehaviour
             return;
         }
 
+        // StreamingAssetsフォルダ内のファイルパスを取得
         apiKeyFilePath = Path.Combine(Application.streamingAssetsPath, "apikey.txt");
 
-        if (Application.platform == RuntimePlatform.Android || Application.platform == RuntimePlatform.IPhonePlayer)
+        // プラットフォーム別にファイル保存先を設定
+        if (Application.platform == RuntimePlatform.Android)
+        {
+            audioFilePath = Path.Combine(Application.persistentDataPath, "test.wav");
+        }
+        else if (Application.platform == RuntimePlatform.IPhonePlayer)
         {
             audioFilePath = Path.Combine(Application.persistentDataPath, "test.wav");
         }
@@ -92,242 +90,186 @@ public class ButtonScript : MonoBehaviour
             audioFilePath = Path.Combine(Application.streamingAssetsPath, "test.wav");
         }
 
+        // ボタンのクリックイベントにリスナーを設定（手動アタッチ済みのため直接利用）
         sendButton.onClick.AddListener(() => StartCoroutine(ReadApiKeyAndPostRequest()));
         recButton.onClick.AddListener(() => StartCoroutine(StartRec()));
-
-        if (autoRecButton != null)
-            autoRecButton.onClick.AddListener(ToggleVoiceActivatedRecording);
-
-        if (vadToggle != null)
-            vadToggle.onValueChanged.AddListener(OnVadToggleChanged);
-
-        if (vadThresholdSlider != null)
+        
+        // 自動録音のトグルイベントを設定
+        if (autoRecordToggle != null)
         {
-            vadThresholdSlider.onValueChanged.AddListener(OnVadThresholdChanged);
-            vadThresholdSlider.value = vadThreshold;
+            autoRecordToggle.onValueChanged.AddListener(ToggleAutoRecording);
+            UpdateAutoRecordStatus();
         }
-
-        InitializeVad();
-    }
-
-    private void InitializeVad()
-    {
-        try
-        {
-            vad = new WebRTCVad();
-            vad.Init();
-            vad.SetMode(aggressiveness);
-
-            vadBuffer = new float[VAD_FRAME_SIZE];
-
-            Debug.Log("WebRTC VAD initialized successfully");
-        }
-        catch (Exception e)
-        {
-            Debug.LogError("Failed to initialize WebRTC VAD: " + e.Message);
-            if (statusText != null)
-                statusText.text = "VAD初期化エラー";
-        }
-    }
-
-    private void OnDestroy()
-    {
-        if (vad != null)
-            vad.Free();
-    }
-
-    private void OnVadToggleChanged(bool isOn)
-    {
-        isVadEnabled = isOn;
-        if (statusText != null)
-            statusText.text = isOn ? "VAD: オン" : "VAD: オフ";
-    }
-
-    private void OnVadThresholdChanged(float value)
-    {
-        vadThreshold = value;
-        if (statusText != null)
-            statusText.text = $"VAD感度: {vadThreshold:F2}";
-    }
-
-    private void ToggleVoiceActivatedRecording()
-    {
-        if (!isListening)
-            StartVoiceActivatedListening();
         else
-            StopVoiceActivatedListening();
-    }
-
-    private void StartVoiceActivatedListening()
-    {
-        if (isListening) return;
-
-        isListening = true;
-        isSpeaking = false;
-        recordedSamples.Clear();
-        currentSilenceTime = 0f;
-
-        listeningClip = Microphone.Start(microphone, true, 1, VAD_SAMPLE_RATE);
-
-        if (autoRecButton != null)
-            autoRecButton.GetComponentInChildren<Text>().text = "音声検出中...";
-
-        if (statusText != null)
-            statusText.text = "音声を検出しています...";
-
-        json.text = "音声検出待機中...";
-
-        StartCoroutine(ProcessAudioForVad());
-    }
-
-    private void StopVoiceActivatedListening()
-    {
-        if (!isListening) return;
-
-        isListening = false;
-        isSpeaking = false;
-        Microphone.End(microphone);
-
-        if (autoRecButton != null)
-            autoRecButton.GetComponentInChildren<Text>().text = "音声検出開始";
-
-        if (statusText != null)
-            statusText.text = "音声検出停止";
-
-        json.text = "音声検出を停止しました";
-
-        StopAllCoroutines();
-    }
-
-    IEnumerator ProcessAudioForVad()
-    {
-        int lastPos = 0;
-
-        while (isListening)
         {
-            int pos = Microphone.GetPosition(microphone);
-            if (pos < lastPos)
-                lastPos = 0;
-
-            if (pos != lastPos)
+            Debug.LogWarning("自動録音トグルがInspectorにアタッチされていません");
+        }
+    }
+    
+    // 自動録音トグルの状態変更時に呼ばれる
+    public void ToggleAutoRecording(bool isOn)
+    {
+        isAutoRecordEnabled = isOn;
+        UpdateAutoRecordStatus();
+        
+        if (isAutoRecordEnabled)
+        {
+            StartListeningForVoice();
+        }
+        else
+        {
+            StopListeningForVoice();
+            if (isRecording)
             {
-                int lengthToRead = pos - lastPos;
-                if (lengthToRead > 0)
-                {
-                    float[] samples = new float[lengthToRead];
-                    listeningClip.GetData(samples, lastPos);
-                    ProcessAudioSamples(samples);
-                }
-                lastPos = pos;
-            }
-
-            if (isSpeaking && Time.time - speakingStartTime > speakingTimeoutDuration)
-            {
-                Debug.Log("最大録音時間に達しました");
                 StopRecording();
             }
-
+        }
+    }
+    
+    // 自動録音状態テキストを更新
+    void UpdateAutoRecordStatus()
+    {
+        if (autoRecordStatusText != null)
+        {
+            autoRecordStatusText.text = isAutoRecordEnabled ? "自動録音: オン" : "自動録音: オフ";
+            autoRecordStatusText.color = isAutoRecordEnabled ? Color.green : Color.red;
+        }
+    }
+    
+    // 音声検出のためのリスニング開始
+    void StartListeningForVoice()
+    {
+        if (!isListeningForVoice && !isRecording)
+        {
+            isListeningForVoice = true;
+            Debug.Log("音声検出リスニングを開始します");
+            
+            // 音声検出用マイク入力の開始
+            AudioClip listeningClip = Microphone.Start(microphone, true, 1, SAMPLE_RATE);
+            StartCoroutine(MonitorAudioLevel(listeningClip));
+        }
+    }
+    
+    // 音声検出のためのリスニング停止
+    void StopListeningForVoice()
+    {
+        if (isListeningForVoice)
+        {
+            isListeningForVoice = false;
+            Microphone.End(microphone);
+            Debug.Log("音声検出リスニングを停止しました");
+        }
+    }
+    
+    // 音声レベルのモニタリング
+    IEnumerator MonitorAudioLevel(AudioClip clip)
+    {
+        while (isListeningForVoice && isAutoRecordEnabled && !isRecording)
+        {
+            // サンプルデータを取得
+            clip.GetData(samples, 0);
+            
+            // 音量レベルを計算
+            float rmsValue = 0f;
+            foreach (float sample in samples)
+            {
+                rmsValue += sample * sample;
+            }
+            rmsValue = Mathf.Sqrt(rmsValue / samples.Length);
+            
+            // 閾値を超えた場合、録音開始
+            if (rmsValue > voiceDetectionThreshold)
+            {
+                Debug.Log("音声を検出: レベル " + rmsValue);
+                StopListeningForVoice();
+                StartCoroutine(StartAutomaticRecording());
+                yield break;
+            }
+            
             yield return null;
         }
     }
-
-    private void ProcessAudioSamples(float[] samples)
+    
+    // 自動録音の開始
+    IEnumerator StartAutomaticRecording()
     {
-        foreach (float sample in samples)
+        if (!isRecording && isAutoRecordEnabled)
         {
-            if (isSpeaking)
-                recordedSamples.Add(sample);
-
-            vadBuffer[vadBufferPosition++] = sample;
-
-            if (vadBufferPosition >= VAD_FRAME_SIZE)
-            {
-                ProcessVadFrame();
-                vadBufferPosition = 0;
-            }
+            isRecording = true;
+            Debug.Log("自動録音を開始します");
+            json.text = "自動録音中...";
+            
+            // 録音開始
+            microphoneInput = Microphone.Start(microphone, true, RECORD_LENGTH_SEC, SAMPLE_RATE);
+            lastVoiceDetectedTime = Time.time;
+            
+            // 録音中の音声レベルをモニタリング
+            StartCoroutine(MonitorSilence());
         }
+        yield return null;
     }
-
-    private void ProcessVadFrame()
+    
+    // 無音区間の検出
+    IEnumerator MonitorSilence()
     {
-        if (!isVadEnabled || vad == null) return;
-
-        try
+        float[] silenceSamples = new float[128];
+        bool hasDetectedSilence = false;
+        
+        while (isRecording && isAutoRecordEnabled)
         {
-            byte[] audioBytes = new byte[VAD_FRAME_SIZE * 2];
-            for (int i = 0; i < VAD_FRAME_SIZE; i++)
+            // 音量レベルを確認
+            microphoneInput.GetData(silenceSamples, microphoneInput.samples - 128);
+            
+            float rmsValue = 0f;
+            foreach (float sample in silenceSamples)
             {
-                short sampleValue = (short)(vadBuffer[i] * short.MaxValue);
-                audioBytes[i * 2] = (byte)(sampleValue & 0xFF);
-                audioBytes[i * 2 + 1] = (byte)((sampleValue >> 8) & 0xFF);
+                rmsValue += sample * sample;
             }
-
-            bool speechDetected = vad.Process(VAD_SAMPLE_RATE, audioBytes, audioBytes.Length);
-            UpdateSpeechState(speechDetected);
-        }
-        catch (Exception e)
-        {
-            Debug.LogError("VAD処理エラー: " + e.Message);
-        }
-    }
-
-    private void UpdateSpeechState(bool speechDetected)
-    {
-        if (speechDetected)
-        {
-            currentSilenceTime = 0f;
-            if (!isSpeaking)
-                StartRecording();
-        }
-        else if (isSpeaking)
-        {
-            currentSilenceTime += (float)VAD_FRAME_SIZE / VAD_SAMPLE_RATE;
-            if (currentSilenceTime >= silenceThreshold)
+            rmsValue = Mathf.Sqrt(rmsValue / silenceSamples.Length);
+            
+            // 音声がある場合は最終検出時間を更新
+            if (rmsValue > voiceDetectionThreshold)
+            {
+                lastVoiceDetectedTime = Time.time;
+                hasDetectedSilence = false;
+            }
+            // 一定時間音声がない場合は録音停止
+            else if (!hasDetectedSilence && Time.time - lastVoiceDetectedTime > silenceDetectionTime)
+            {
+                Debug.Log("無音を検出: 録音を停止します");
+                hasDetectedSilence = true;
                 StopRecording();
+                break;
+            }
+            
+            yield return null;
         }
     }
-
-    private void StartRecording()
+    
+    // 録音停止処理
+    void StopRecording()
     {
-        isSpeaking = true;
-        speakingStartTime = Time.time;
-        recordedSamples.Clear();
-
-        Debug.Log("音声検出: 録音開始");
-        if (statusText != null)
-            statusText.text = "録音中...";
-        json.text = "音声検出: 録音中...";
-    }
-
-    private void StopRecording()
-    {
-        if (!isSpeaking) return;
-
-        isSpeaking = false;
-        Debug.Log("録音停止: サンプル数 " + recordedSamples.Count);
-
-        if (statusText != null)
-            statusText.text = "録音完了 - 処理中";
-        json.text = "録音完了 - 処理中";
-
-        if (recordedSamples.Count > 0)
+        if (isRecording)
         {
-            float[] audioData = recordedSamples.ToArray();
-            microphoneInput = AudioClip.Create("RecordedAudio", audioData.Length, 1, VAD_SAMPLE_RATE, false);
-            microphoneInput.SetData(audioData, 0);
-
+            isRecording = false;
+            Debug.Log("録音を停止し、WAVファイルに保存します。");
+            
+            // 録音停止
+            Microphone.End(microphone);
+            
+            // WAVファイルとして保存
             SaveWavFile(audioFilePath, microphoneInput);
+            json.text = "自動録音完了 - 解析開始";
+            
+            // APIリクエスト開始
             StartCoroutine(ReadApiKeyAndPostRequest());
+            
+            // 自動録音モードが有効なら、また音声検出を開始
+            if (isAutoRecordEnabled)
+            {
+                StartListeningForVoice();
+            }
         }
-        else
-        {
-            Debug.LogWarning("録音データがありません");
-            if (statusText != null)
-                statusText.text = "録音データなし";
-            json.text = "録音データがありません";
-        }
-
-        currentSilenceTime = 0f;
     }
 
     void OpenSettingsScene()
@@ -335,16 +277,23 @@ public class ButtonScript : MonoBehaviour
         SceneManager.LoadScene("SettingsScene");
     }
 
+    // APIキーを読み込む（Start内から呼び出す）
     private string LoadApiKey()
     {
-        string apiKey = string.Empty;
+        string apiKey = "";
         try
         {
-            string path = Path.Combine(Application.persistentDataPath, "apikey.txt");
-            if (File.Exists(path))
-                apiKey = File.ReadAllText(path).Trim();
+            string apiKeyFilePath = Path.Combine(Application.persistentDataPath, "apikey.txt");
+            if (File.Exists(apiKeyFilePath))
+            {
+                apiKey = File.ReadAllText(apiKeyFilePath).Trim();
+                Debug.Log("保存されたAPIキーを読み込みました");
+            }
             else
-                Debug.LogError("APIキーファイルが見つかりません: " + path);
+            {
+                Debug.LogError("APIキーファイルが見つかりません: " + apiKeyFilePath);
+                json.text = "ERROR: APIキーが設定されていません。設定画面で設定してください。";
+            }
         }
         catch (Exception e)
         {
@@ -353,54 +302,99 @@ public class ButtonScript : MonoBehaviour
         return apiKey;
     }
 
+    IEnumerator PostRequestWithLoadedApiKey()
+    {
+        json.text = "Post Requesting...";
+        
+        // APIキーをファイルから読み込む
+        string apiKey = LoadApiKey();
+        
+        // APIキーが読み込めなかった場合
+        if (string.IsNullOrEmpty(apiKey))
+        {
+            json.text = "ERROR: APIキーが設定されていません。設定画面で設定してください。";
+            Debug.LogError("APIキーが設定されていません");
+            yield break;
+        }
+        
+        // リクエスト送信
+        yield return StartCoroutine(PostRequest(apiKey));
+    }
+
     IEnumerator ReadApiKeyAndPostRequest()
     {
         json.text = "Post Requesting...";
-        string apiKey = string.Empty;
+        string apiKey = "";
 
+        // StreamingAssets から API キーを読み込む（Android でも対応）
         if (apiKeyFilePath.StartsWith("http") || Application.platform == RuntimePlatform.Android)
         {
             using (UnityWebRequest request = UnityWebRequest.Get(apiKeyFilePath))
             {
                 yield return request.SendWebRequest();
+
                 if (request.result == UnityWebRequest.Result.Success)
+                {
                     apiKey = request.downloadHandler.text.Trim();
+                }
                 else
+                {
+                    Debug.LogError("APIキーの取得に失敗: " + request.error);
                     yield break;
+                }
             }
         }
-        else if (File.Exists(apiKeyFilePath))
+        else
         {
-            apiKey = File.ReadAllText(apiKeyFilePath).Trim();
+            if (File.Exists(apiKeyFilePath))
+            {
+                apiKey = File.ReadAllText(apiKeyFilePath).Trim();
+            }
+            else
+            {
+                Debug.LogError("APIキーのファイルが見つかりません: " + apiKeyFilePath);
+                yield break;
+            }
         }
 
+        // リクエスト送信
         yield return StartCoroutine(PostRequest(apiKey));
     }
 
     IEnumerator PostRequest(string apiKey)
     {
-        var form = new List<IMultipartFormSection>
+        // マルチパートフォームデータの作成
+        List<IMultipartFormSection> form = new List<IMultipartFormSection>
         {
             new MultipartFormDataSection("u", apiKey),
             new MultipartFormDataSection("d", "grammarFileNames=-a-general loggingOptOut=True sentimentAnalysis=True"),
             new MultipartFormDataSection("c", "LSB44K")
         };
 
+        // 音声ファイルの読み込み
         byte[] audioData = File.ReadAllBytes(audioFilePath);
         form.Add(new MultipartFormFileSection("a", audioData, "test.wav", "audio/wav"));
 
         using (UnityWebRequest request = UnityWebRequest.Post(apiUrl, form))
         {
             yield return request.SendWebRequest();
+
             if (request.result == UnityWebRequest.Result.Success)
             {
+                Debug.Log("リクエスト成功: " + request.downloadHandler.text);
                 Save(request.downloadHandler.text);
+
+                // sessionID取得（レスポンスからパース）
                 var response = JsonUtility.FromJson<RecognitionResponse>(request.downloadHandler.text);
                 sessionID = response.sessionid;
+                Debug.Log("sessionID: " + sessionID);
+
+                // セッションの結果をポーリング
                 StartCoroutine(PollJobStatus(apiKey));
             }
             else
             {
+                Debug.LogError("リクエスト失敗: " + request.error);
                 json.text = "ERROR: Post Request failed";
             }
         }
@@ -409,6 +403,7 @@ public class ButtonScript : MonoBehaviour
     IEnumerator PollJobStatus(string apiKey)
     {
         json.text = "Poll Job";
+
         string pollUrl = $"https://acp-api-async.amivoice.com/v1/recognitions/{sessionID}";
         while (true)
         {
@@ -416,26 +411,61 @@ public class ButtonScript : MonoBehaviour
             {
                 request.SetRequestHeader("Authorization", "Bearer " + apiKey);
                 yield return request.SendWebRequest();
+
                 if (request.result == UnityWebRequest.Result.Success)
                 {
-                    var response = JsonUtility.FromJson<SentimentAnalysisResponse>(request.downloadHandler.text);
+                    SentimentAnalysisResponse response = JsonUtility.FromJson<SentimentAnalysisResponse>(request.downloadHandler.text);
+                    Debug.Log("ジョブ状態: " + response.status);
                     if (response.status == "completed")
                     {
-                        if (gameController != null)
-                            gameController.SetParametersFromJson(request.downloadHandler.text);
+                        json.text = "Poll Job waiting... 3/3";
+                        Debug.Log("音声認識完了！");
 
-                        var sb = new StringBuilder();
-                        foreach (var seg in response.segments)
-                            foreach (var res in seg.results)
-                                foreach (var tok in res.tokens)
-                                    sb.Append(tok.written == "。" ? tok.written + "\n" : tok.written + " ");
+                        if (gameController != null)
+                        {
+                            gameController.SetParametersFromJson(request.downloadHandler.text);
+                            Debug.Log("感情パラメータをGameControllerに送信しました");
+                        }
+                        else
+                        {
+                            Debug.LogError("GameControllerが見つかりません！");
+                        }
+
+                        StringBuilder sb = new StringBuilder();
+                        if (response != null && response.segments != null)
+                        {
+                            foreach (Segment seg in response.segments)
+                            {
+                                foreach (Result res in seg.results)
+                                {
+                                    foreach (Token tok in res.tokens)
+                                    {
+                                        if (tok.written.Equals("。"))
+                                        {
+                                            sb.Append(tok.written).Append("\n");
+                                        }
+                                        else
+                                        {
+                                            sb.Append(tok.written).Append(" ");
+                                        }
+                                    }
+                                }
+                            }
+                        }
 
                         if (jsontext != null)
+                        {
                             jsontext.text = sb.ToString();
+                        }
+                        else
+                        {
+                            Debug.LogError("jsontext が null です！");
+                            json.text = "ERROR: jsontext is null!";
+                        }
 
-                        var sumSegments = new SentimentSegment();
+                        SentimentSegment sumSegments = new SentimentSegment();
                         int cnt = 0;
-                        foreach (var seg in response.sentiment_analysis.segments)
+                        foreach (SentimentSegment seg in response.sentiment_analysis.segments)
                         {
                             sumSegments.energy += seg.energy;
                             sumSegments.content += seg.content;
@@ -461,84 +491,142 @@ public class ButtonScript : MonoBehaviour
                         }
                         Ave(sumSegments, cnt);
                         Save(request.downloadHandler.text);
-
-                        if (isListening && isVadEnabled)
-                            json.text = "音声検出待機中...";
-
                         break;
                     }
                     else
                     {
-                        json.text = response.status switch
+                        if (response.status == "started")
                         {
-                            "started" => "Poll Job waiting... 1/3",
-                            "processing" => "Poll Job waiting... 2/3",
-                            "error" => "ERROR: Poll Job failed",
-                            _ => "Poll Job waiting..."
-                        };
-                        if (response.status == "error") break;
+                            json.text = "Poll Job waiting... 1/3";
+                        }
+                        else if (response.status == "processing")
+                        {
+                            json.text = "Poll Job waiting... 2/3";
+                        }
+                        else if (response.status == "error")
+                        {
+                            json.text = "ERROR: Poll Job failed";
+                            break;
+                        }
+                        else
+                        {
+                            json.text = "Poll Job waiting...";
+                        }
                     }
                 }
                 else
                 {
+                    Debug.LogError("ポーリング失敗: " + request.error);
                     json.text = "ERROR: Poll Job failed";
                     break;
                 }
             }
-            yield return new WaitForSeconds(5f);
+
+            yield return new WaitForSeconds(4f);
+            json.text = "Poll Job waiting";
+            yield return new WaitForSeconds(1f);
         }
     }
 
     IEnumerator StartRec()
     {
         yield return null;
+
         string tmp = recSec.GetComponent<Text>().text;
-        if (!int.TryParse(tmp, out RECORD_LENGTH_SEC) || RECORD_LENGTH_SEC <= 0)
+        Debug.Log(tmp);
+
+        if (RECORD_LENGTH_SEC == null)
         {
-            json.text = "ERROR: invalid record sec";
+            Debug.Log("ERROR: null record sec");
+            json.text = "ERROR: null record sec";
             yield break;
         }
 
-        microphoneInput = Microphone.Start(microphone, false, RECORD_LENGTH_SEC, SAMPLE_RATE);
-        json.text = $"START Recording for {RECORD_LENGTH_SEC} sec!";
-        StartCoroutine(WaitAndExecute());
+        try
+        {
+            RECORD_LENGTH_SEC = int.Parse(tmp);
+
+            if (RECORD_LENGTH_SEC > 0)
+            {
+                microphoneInput = Microphone.Start(microphone, false, RECORD_LENGTH_SEC, SAMPLE_RATE);
+                Debug.Log("録音を開始します。何か話してください。");
+                json.text = "START Recording for " + RECORD_LENGTH_SEC + " sec!";
+                StartCoroutine(WaitAndExecute());
+            }
+            else
+            {
+                Debug.Log("error: RECORD_LENGTH_SEC");
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.Log(e);
+            yield break;
+        }
     }
 
     IEnumerator WaitAndExecute()
     {
         yield return new WaitForSeconds(RECORD_LENGTH_SEC);
-        SaveWavFile(audioFilePath, microphoneInput);
+        Debug.Log("録音を終了し、WAVファイルに保存します。");
+
+        var filePath = string.Format("{0}", audioFilePath);
+        Debug.Log("filePath: " + filePath);
+
+        SaveWavFile(filePath, microphoneInput);
         json.text = "RECORDING END";
     }
 
     private void SaveWavFile(string filepath, AudioClip clip)
     {
-        WavUtility.FromAudioClip(clip, filepath, true);
+        // WavUtilityのスクリプトが必要です（https://github.com/deadlyfingers/UnityWav）
+        byte[] wavBytes = WavUtility.FromAudioClip(clip, filepath, true);
     }
 
     void Ave(SentimentSegment res, int cnt)
     {
-        json.text =
-            $"エネルギー: {Calc(res.energy, cnt)}\n" +
-            $"よろこび: {Calc(res.content, cnt)}\n" +
-            $"動揺: {Calc(res.upset, cnt)}\n" +
-            $"攻撃性 憤り: {Calc(res.aggression, cnt)}\n" +
-            $"ストレス: {Calc(res.stress, cnt)}\n" +
-            $"不確実性: {Calc(res.uncertainty, cnt)}\n" +
-            $"興奮: {Calc(res.excitement, cnt)}\n" +
-            $"集中: {Calc(res.concentration, cnt)}\n" +
-            $"感情バランス論理: {Calc(res.emo_cog, cnt)}\n" +
-            $"ためらい(躊躇): {Calc(res.hesitation, cnt)}\n" +
-            $"脳活動: {Calc(res.brain_power, cnt)}\n" +
-            $"困惑: {Calc(res.embarrassment, cnt)}\n" +
-            $"思考: {Calc(res.intensive_thinking, cnt)}\n" +
-            $"想像力: {Calc(res.imagination_activity, cnt)}\n" +
-            $"極端な起伏(感情): {Calc(res.extreme_emotion, cnt)}\n" +
-            $"情熱: {Calc(res.passionate, cnt)}\n" +
-            $"雰囲気: {Calc(res.atmosphere, cnt)}\n" +
-            $"期待: {Calc(res.anticipation, cnt)}\n" +
-            $"不満: {Calc(res.dissatisfaction, cnt)}\n" +
-            $"自信: {Calc(res.confidence, cnt)}";
+        Debug.Log("Ave values below");
+        Debug.Log("エネルギー: " + (double)res.energy / cnt);
+        Debug.Log("よろこび: " + (double)res.content / cnt);
+        Debug.Log("動揺: " + (double)res.upset / cnt);
+        Debug.Log("攻撃性 憤り: " + (double)res.aggression / cnt);
+        Debug.Log("ストレス: " + (double)res.stress / cnt);
+        Debug.Log("不確実性: " + (double)res.uncertainty / cnt);
+        Debug.Log("興奮: " + (double)res.excitement / cnt);
+        Debug.Log("集中: " + (double)res.concentration / cnt);
+        Debug.Log("感情バランス論理: " + (double)res.emo_cog / cnt);
+        Debug.Log("ためらい(躊躇): " + (double)res.hesitation / cnt);
+        Debug.Log("脳活動: " + (double)res.brain_power / cnt);
+        Debug.Log("困惑: " + (double)res.embarrassment / cnt);
+        Debug.Log("思考: " + (double)res.intensive_thinking / cnt);
+        Debug.Log("想像力: " + (double)res.imagination_activity / cnt);
+        Debug.Log("極端な起伏(感情): " + (double)res.extreme_emotion / cnt);
+        Debug.Log("情熱: " + (double)res.passionate / cnt);
+        Debug.Log("雰囲気: " + (double)res.atmosphere / cnt);
+        Debug.Log("期待: " + (double)res.anticipation / cnt);
+        Debug.Log("不満: " + (double)res.dissatisfaction / cnt);
+        Debug.Log("自信: " + (double)res.confidence / cnt);
+
+        json.text = "エネルギー: " + Calc(res.energy, cnt) + "\n" +
+                    "よろこび: " + Calc(res.content, cnt) + "\n" +
+                    "動揺: " + Calc(res.upset, cnt) + "\n" +
+                    "攻撃性 憤り: " + Calc(res.aggression, cnt) + "\n" +
+                    "ストレス: " + Calc(res.stress, cnt) + "\n" +
+                    "不確実性: " + Calc(res.uncertainty, cnt) + "\n" +
+                    "興奮: " + Calc(res.excitement, cnt) + "\n" +
+                    "集中: " + Calc(res.concentration, cnt) + "\n" +
+                    "感情バランス論理: " + Calc(res.emo_cog, cnt) + "\n" +
+                    "ためらい(躊躇): " + Calc(res.hesitation, cnt) + "\n" +
+                    "脳活動: " + Calc(res.brain_power, cnt) + "\n" +
+                    "困惑: " + Calc(res.embarrassment, cnt) + "\n" +
+                    "思考: " + Calc(res.intensive_thinking, cnt) + "\n" +
+                    "想像力: " + Calc(res.imagination_activity, cnt) + "\n" +
+                    "極端な起伏(感情): " + Calc(res.extreme_emotion, cnt) + "\n" +
+                    "情熱: " + Calc(res.passionate, cnt) + "\n" +
+                    "雰囲気: " + Calc(res.atmosphere, cnt) + "\n" +
+                    "期待: " + Calc(res.anticipation, cnt) + "\n" +
+                    "不満: " + Calc(res.dissatisfaction, cnt) + "\n" +
+                    "自信: " + Calc(res.confidence, cnt);
     }
 
     void Save(string data)
@@ -547,6 +635,7 @@ public class ButtonScript : MonoBehaviour
         {
             string filePath = Path.Combine(Application.persistentDataPath, "log.txt");
             File.WriteAllText(filePath, data);
+            Debug.Log("ログデータを保存しました: " + filePath);
         }
         catch (Exception e)
         {
@@ -558,87 +647,14 @@ public class ButtonScript : MonoBehaviour
     {
         return (float)num / div;
     }
-}
-
-public class WebRTCVad
-{
-    private IntPtr vadInst;
-
-    [System.Runtime.InteropServices.DllImport("webrtc_vad")]
-    private static extern IntPtr WebRtcVad_Create();
-
-    [System.Runtime.InteropServices.DllImport("webrtc_vad")]
-    private static extern void WebRtcVad_Free(IntPtr vadInst);
-
-    [System.Runtime.InteropServices.DllImport("webrtc_vad")]
-    private static extern int WebRtcVad_Init(IntPtr vadInst);
-
-    [System.Runtime.InteropServices.DllImport("webrtc_vad")]
-    private static extern int WebRtcVad_set_mode(IntPtr vadInst, int mode);
-
-    [System.Runtime.InteropServices.DllImport("webrtc_vad")]
-    private static extern int WebRtcVad_Process(IntPtr vadInst, int fs, byte[] audioFrame, int frameLength);
-
-    public WebRTCVad()
+    
+    // アプリケーション終了時にリソースを解放
+    void OnDestroy()
     {
-        vadInst = IntPtr.Zero;
-    }
-
-    public void Init()
-    {
-        vadInst = WebRtcVad_Create();
-        if (vadInst == IntPtr.Zero)
-            throw new Exception("Failed to create WebRTC VAD instance");
-
-        int result = WebRtcVad_Init(vadInst);
-        if (result != 0)
-            throw new Exception("Failed to initialize WebRTC VAD: " + result);
-    }
-
-    public void SetMode(int mode)
-    {
-        if (vadInst == IntPtr.Zero)
-            throw new Exception("WebRTC VAD not initialized");
-
-        int result = WebRtcVad_set_mode(vadInst, mode);
-        if (result != 0)
-            throw new Exception("Failed to set WebRTC VAD mode: " + result);
-    }
-
-    public bool Process(int sampleRate, byte[] audioFrame, int frameLength)
-    {
-        if (vadInst == IntPtr.Zero)
-            throw new Exception("WebRTC VAD not initialized");
-
-        if (sampleRate != 8000 && sampleRate != 16000 && sampleRate != 32000)
-            throw new Exception("Unsupported sample rate: " + sampleRate);
-
-        int samplesIn10ms = sampleRate / 100;
-        bool validFrame = false;
-        for (int i = 1; i <= 3; i++)
+        StopListeningForVoice();
+        if (isRecording)
         {
-            if (frameLength == i * samplesIn10ms * 2)
-            {
-                validFrame = true;
-                break;
-            }
-        }
-        if (!validFrame)
-            throw new Exception("Invalid frame length: " + frameLength);
-
-        int result = WebRtcVad_Process(vadInst, sampleRate, audioFrame, frameLength);
-        if (result < 0)
-            throw new Exception("WebRTC VAD processing error: " + result);
-
-        return result == 1;
-    }
-
-    public void Free()
-    {
-        if (vadInst != IntPtr.Zero)
-        {
-            WebRtcVad_Free(vadInst);
-            vadInst = IntPtr.Zero;
+            Microphone.End(microphone);
         }
     }
 }
