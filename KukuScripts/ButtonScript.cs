@@ -28,9 +28,7 @@ public class ButtonScript : MonoBehaviour
     [Header("Auto Recording Settings")]
     public Toggle autoRecordToggle;
     public Text autoRecordStatusText;
-    public float voiceDetectionThreshold = 0.02f;
-    public float silenceDetectionTime = 2.0f;  // 無音検出までの時間（秒）
-
+    
     private string apiUrl = "https://acp-api-async.amivoice.com/v1/recognitions";
     private string sampleUrl = "https://acp-dsrpp.amivoice.com/v1/sentiment-analysis/ja/result-parameters.json";
     private string apiKeyFilePath;
@@ -47,6 +45,11 @@ public class ButtonScript : MonoBehaviour
     private bool isRecording = false;
     private float[] samples = new float[128];
     private float lastVoiceDetectedTime = 0f;
+    
+    // システム設定の参照（SettingsManagerから読み込む）
+    private float voiceDetectionThreshold = 0.02f;
+    private float silenceDetectionTime = 2.0f;
+    private string selectedMicrophone = "";
 
     void Start()
     {
@@ -64,17 +67,26 @@ public class ButtonScript : MonoBehaviour
             settingsButton.onClick.AddListener(OpenSettingsScene);
         }
 
+        // 設定を読み込む
+        LoadSettings();
+
         // マイクの設定
-        microphone = Microphone.devices.FirstOrDefault();
+        // 設定で選択されたマイクを優先的に使用
+        if (!string.IsNullOrEmpty(selectedMicrophone) && Array.IndexOf(Microphone.devices, selectedMicrophone) >= 0)
+        {
+            microphone = selectedMicrophone;
+        }
+        else
+        {
+            microphone = Microphone.devices.FirstOrDefault();
+        }
+        
         Debug.Log("microphone: " + microphone);
         if (microphone == null)
         {
             Debug.LogError("No microphone found");
             return;
         }
-
-        // StreamingAssetsフォルダ内のファイルパスを取得
-        apiKeyFilePath = Path.Combine(Application.streamingAssetsPath, "apikey.txt");
 
         // プラットフォーム別にファイル保存先を設定
         if (Application.platform == RuntimePlatform.Android)
@@ -103,6 +115,48 @@ public class ButtonScript : MonoBehaviour
         else
         {
             Debug.LogWarning("自動録音トグルがInspectorにアタッチされていません");
+        }
+    }
+    
+    // 設定ファイルから設定を読み込む
+    void LoadSettings()
+    {
+        try
+        {
+            // SettingsManagerと同じファイル名を使用
+            string settingsPath = Path.Combine(Application.persistentDataPath, "micsettings.json");
+            if (File.Exists(settingsPath))
+            {
+                string jsonData = File.ReadAllText(settingsPath);
+                SettingsManager.MicSettings settings = JsonUtility.FromJson<SettingsManager.MicSettings>(jsonData);
+                
+                // 設定を読み込む
+                voiceDetectionThreshold = settings.voiceDetectionThreshold;
+                silenceDetectionTime = settings.silenceDetectionTime;
+                RECORD_LENGTH_SEC = settings.recordLengthSec;
+                selectedMicrophone = settings.selectedMicrophone;
+                
+                // recSecに録音時間を設定
+                if (recSec != null && recSec.GetComponent<Text>() != null)
+                {
+                    recSec.GetComponent<Text>().text = RECORD_LENGTH_SEC.ToString();
+                }
+                
+                Debug.Log($"マイク設定を読み込みました: 閾値={voiceDetectionThreshold}, 無音検出時間={silenceDetectionTime}, 録音時間={RECORD_LENGTH_SEC}秒, マイク={selectedMicrophone}");
+            }
+            else
+            {
+                Debug.Log("設定ファイルが見つからないため、デフォルト値を使用します");
+                // recSecにデフォルト値を設定
+                if (recSec != null && recSec.GetComponent<Text>() != null)
+                {
+                    recSec.GetComponent<Text>().text = RECORD_LENGTH_SEC.ToString();
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogError("設定の読み込みに失敗: " + e.Message);
         }
     }
     
@@ -201,6 +255,7 @@ public class ButtonScript : MonoBehaviour
             
             // 録音開始
             microphoneInput = Microphone.Start(microphone, true, RECORD_LENGTH_SEC, SAMPLE_RATE);
+            
             lastVoiceDetectedTime = Time.time;
             
             // 録音中の音声レベルをモニタリング
@@ -277,7 +332,7 @@ public class ButtonScript : MonoBehaviour
         SceneManager.LoadScene("SettingsScene");
     }
 
-    // APIキーを読み込む（Start内から呼び出す）
+    // APIキーを読み込む
     private string LoadApiKey()
     {
         string apiKey = "";
@@ -302,7 +357,7 @@ public class ButtonScript : MonoBehaviour
         return apiKey;
     }
 
-    IEnumerator PostRequestWithLoadedApiKey()
+    IEnumerator ReadApiKeyAndPostRequest()
     {
         json.text = "Post Requesting...";
         
@@ -317,46 +372,6 @@ public class ButtonScript : MonoBehaviour
             yield break;
         }
         
-        // リクエスト送信
-        yield return StartCoroutine(PostRequest(apiKey));
-    }
-
-    IEnumerator ReadApiKeyAndPostRequest()
-    {
-        json.text = "Post Requesting...";
-        string apiKey = "";
-
-        // StreamingAssets から API キーを読み込む（Android でも対応）
-        if (apiKeyFilePath.StartsWith("http") || Application.platform == RuntimePlatform.Android)
-        {
-            using (UnityWebRequest request = UnityWebRequest.Get(apiKeyFilePath))
-            {
-                yield return request.SendWebRequest();
-
-                if (request.result == UnityWebRequest.Result.Success)
-                {
-                    apiKey = request.downloadHandler.text.Trim();
-                }
-                else
-                {
-                    Debug.LogError("APIキーの取得に失敗: " + request.error);
-                    yield break;
-                }
-            }
-        }
-        else
-        {
-            if (File.Exists(apiKeyFilePath))
-            {
-                apiKey = File.ReadAllText(apiKeyFilePath).Trim();
-            }
-            else
-            {
-                Debug.LogError("APIキーのファイルが見つかりません: " + apiKeyFilePath);
-                yield break;
-            }
-        }
-
         // リクエスト送信
         yield return StartCoroutine(PostRequest(apiKey));
     }
@@ -535,7 +550,7 @@ public class ButtonScript : MonoBehaviour
         string tmp = recSec.GetComponent<Text>().text;
         Debug.Log(tmp);
 
-        if (RECORD_LENGTH_SEC == null)
+        if (RECORD_LENGTH_SEC == 0)
         {
             Debug.Log("ERROR: null record sec");
             json.text = "ERROR: null record sec";
@@ -544,10 +559,10 @@ public class ButtonScript : MonoBehaviour
 
         try
         {
-            RECORD_LENGTH_SEC = int.Parse(tmp);
-
-            if (RECORD_LENGTH_SEC > 0)
+            int parsedLength = int.Parse(tmp);
+            if (parsedLength > 0)
             {
+                RECORD_LENGTH_SEC = parsedLength;
                 microphoneInput = Microphone.Start(microphone, false, RECORD_LENGTH_SEC, SAMPLE_RATE);
                 Debug.Log("録音を開始します。何か話してください。");
                 json.text = "START Recording for " + RECORD_LENGTH_SEC + " sec!";
@@ -556,11 +571,13 @@ public class ButtonScript : MonoBehaviour
             else
             {
                 Debug.Log("error: RECORD_LENGTH_SEC");
+                json.text = "ERROR: 録音時間は1秒以上に設定してください";
             }
         }
         catch (Exception e)
         {
             Debug.Log(e);
+            json.text = "ERROR: 録音秒数の解析に失敗しました";
             yield break;
         }
     }
@@ -579,7 +596,7 @@ public class ButtonScript : MonoBehaviour
 
     private void SaveWavFile(string filepath, AudioClip clip)
     {
-        // WavUtilityのスクリプトが必要です（https://github.com/deadlyfingers/UnityWav）
+        // WavUtilityのスクリプトが必要です
         byte[] wavBytes = WavUtility.FromAudioClip(clip, filepath, true);
     }
 
@@ -651,10 +668,35 @@ public class ButtonScript : MonoBehaviour
     // アプリケーション終了時にリソースを解放
     void OnDestroy()
     {
+        // 全てのコルーチンを停止
+        StopAllCoroutines();
+        
+        // マイクリソースの解放
         StopListeningForVoice();
         if (isRecording)
         {
             Microphone.End(microphone);
+        }
+    }
+
+    // アプリケーションの一時停止時にも対応
+    void OnApplicationPause(bool pauseStatus)
+    {
+        if (pauseStatus)
+        {
+            // アプリが一時停止したらマイクを停止
+            if (Microphone.IsRecording(microphone))
+            {
+                Microphone.End(microphone);
+            }
+        }
+        else
+        {
+            // アプリが再開したら必要に応じてマイクを再開
+            if (isAutoRecordEnabled && !isRecording && !isListeningForVoice)
+            {
+                StartListeningForVoice();
+            }
         }
     }
 }
