@@ -18,6 +18,11 @@ public class SettingsManager : MonoBehaviour
     public Slider silenceTimeSlider;         // 無音検出時間スライダー
     public Text silenceTimeText;             // 無音検出時間の表示
     
+    [Header("音声モニター")]
+    public Image voiceLevelBar;              // 音声レベルを表示するバー
+    public Image thresholdLineMarker;        // 閾値を示すライン
+    public Text currentLevelText;            // 現在の音量レベルを表示するテキスト
+    
     [Header("UI要素")]
     public Button saveButton;
     public Button backButton;
@@ -25,6 +30,11 @@ public class SettingsManager : MonoBehaviour
 
     private string apiKeyFilePath;
     private string micSettingsFilePath;
+    
+    private AudioClip microphoneClip;        // マイク入力用AudioClip
+    private float[] samplesData;             // 音声データのサンプル
+    private float currentVoiceLevel = 0f;    // 現在の音声レベル
+    private bool isMonitoring = false;       // モニタリング中かどうか
 
     // 設定データを保存するためのクラス
     [Serializable]
@@ -65,6 +75,24 @@ public class SettingsManager : MonoBehaviour
         // 保存されている設定を読み込む
         LoadApiKey();
         LoadMicSettings();
+        
+        // サンプルデータ用の配列を初期化
+        samplesData = new float[1024];
+        
+        // 閾値マーカーの初期位置を設定
+        UpdateThresholdMarkerPosition();
+        
+        // Settingsシーンでは自動的にマイクモニタリングを開始
+        StartMicrophoneMonitoring();
+    }
+    
+    void Update()
+    {
+        // モニタリング中は音声レベルを更新
+        if (isMonitoring && microphoneClip != null)
+        {
+            UpdateVoiceLevel();
+        }
     }
     
     // マイクデバイスの選択肢を初期化
@@ -91,6 +119,9 @@ public class SettingsManager : MonoBehaviour
                         microphoneDropdown.value = savedIndex;
                     }
                 }
+                
+                // マイクデバイスが変更された時のイベントを追加
+                microphoneDropdown.onValueChanged.AddListener(OnMicrophoneChanged);
             }
             else
             {
@@ -102,6 +133,14 @@ public class SettingsManager : MonoBehaviour
                     statusText.text = "警告: マイクデバイスが見つかりません";
             }
         }
+    }
+
+    // マイクが変更された時の処理
+    void OnMicrophoneChanged(int index)
+    {
+        // 現在のモニタリングを停止して再開
+        StopMicrophoneMonitoring();
+        StartMicrophoneMonitoring();
     }
 
     void LoadApiKey()
@@ -129,6 +168,19 @@ public class SettingsManager : MonoBehaviour
     {
         try
         {
+            // スライダーの範囲を常に設定する（バグ修正）
+            if (thresholdSlider != null)
+            {
+                thresholdSlider.minValue = 0.001f;
+                thresholdSlider.maxValue = 0.2f;
+            }
+            
+            if (silenceTimeSlider != null)
+            {
+                silenceTimeSlider.minValue = 0.5f;
+                silenceTimeSlider.maxValue = 5.0f;
+            }
+            
             if (File.Exists(micSettingsFilePath))
             {
                 string json = File.ReadAllText(micSettingsFilePath);
@@ -160,20 +212,19 @@ public class SettingsManager : MonoBehaviour
                 
                 if (thresholdSlider != null)
                 {
-                    thresholdSlider.minValue = 0.001f;
-                    thresholdSlider.maxValue = 0.1f;
                     thresholdSlider.value = micSettings.voiceDetectionThreshold;
                     UpdateThresholdValueText();
                 }
                 
                 if (silenceTimeSlider != null)
                 {
-                    silenceTimeSlider.minValue = 0.5f;
-                    silenceTimeSlider.maxValue = 5.0f;
                     silenceTimeSlider.value = micSettings.silenceDetectionTime;
                     UpdateSilenceTimeText();
                 }
             }
+            
+            // 閾値マーカーの位置を更新
+            UpdateThresholdMarkerPosition();
         }
         catch (Exception e)
         {
@@ -268,6 +319,7 @@ public class SettingsManager : MonoBehaviour
     void OnThresholdChanged(float value)
     {
         UpdateThresholdValueText();
+        UpdateThresholdMarkerPosition();
     }
     
     // 閾値の表示テキストを更新
@@ -276,6 +328,30 @@ public class SettingsManager : MonoBehaviour
         if (thresholdValueText != null)
         {
             thresholdValueText.text = thresholdSlider.value.ToString("F3");
+        }
+    }
+    
+    // 閾値マーカーの位置を更新
+    void UpdateThresholdMarkerPosition()
+    {
+        if (thresholdLineMarker != null && voiceLevelBar != null)
+        {
+            // スライダーの値に基づいて閾値マーカーの位置を設定
+            // voiceLevelBarの親要素（通常はRectTransform）を基準に位置を設定
+            RectTransform barRect = voiceLevelBar.rectTransform.parent as RectTransform;
+            RectTransform markerRect = thresholdLineMarker.rectTransform;
+            
+            if (barRect != null && markerRect != null)
+            {
+                // 閾値の値を0～1の範囲に正規化（スライダーの最小値から最大値の範囲で）
+                float normalizedThreshold = Mathf.InverseLerp(thresholdSlider.minValue, thresholdSlider.maxValue, thresholdSlider.value);
+                
+                // バーの幅に応じてマーカーの位置を設定
+                float barWidth = barRect.rect.width;
+                Vector2 anchoredPosition = markerRect.anchoredPosition;
+                anchoredPosition.x = normalizedThreshold * barWidth;
+                markerRect.anchoredPosition = anchoredPosition;
+            }
         }
     }
     
@@ -293,10 +369,140 @@ public class SettingsManager : MonoBehaviour
             silenceTimeText.text = silenceTimeSlider.value.ToString("F1") + "秒";
         }
     }
+    
+    // マイクモニタリングを開始
+    void StartMicrophoneMonitoring()
+    {
+        if (microphoneDropdown != null && microphoneDropdown.options.Count > 0 && microphoneDropdown.interactable)
+        {
+            string deviceName = microphoneDropdown.options[microphoneDropdown.value].text;
+            
+            // マイクからの録音を開始
+            microphoneClip = Microphone.Start(deviceName, true, 1, 44100);
+            
+            // 録音が始まるまで少し待つ
+            while (!(Microphone.GetPosition(deviceName) > 0)) { }
+            
+            isMonitoring = true;
+            Debug.Log("マイクモニタリングを開始: " + deviceName);
+            
+            if (statusText != null)
+                statusText.text = "マイクモニタリング中...";
+        }
+        else
+        {
+            Debug.LogError("マイクデバイスが選択されていません");
+            
+            if (statusText != null)
+                statusText.text = "マイクデバイスが選択されていません";
+        }
+    }
+    
+    // マイクモニタリングを停止
+    void StopMicrophoneMonitoring()
+    {
+        if (microphoneClip != null)
+        {
+            string deviceName = "";
+            
+            if (microphoneDropdown != null && microphoneDropdown.options.Count > 0 && microphoneDropdown.interactable)
+            {
+                deviceName = microphoneDropdown.options[microphoneDropdown.value].text;
+            }
+            
+            // マイクの録音を停止
+            Microphone.End(deviceName);
+            microphoneClip = null;
+            
+            // UI表示をリセット
+            if (voiceLevelBar != null)
+                voiceLevelBar.fillAmount = 0f;
+            
+            if (currentLevelText != null)
+                currentLevelText.text = "0.000";
+            
+            isMonitoring = false;
+            Debug.Log("マイクモニタリングを停止");
+        }
+    }
+    
+    // 音声レベルを更新
+    void UpdateVoiceLevel()
+    {
+        if (microphoneClip == null) return;
+        
+        // 現在のマイク位置を取得
+        string deviceName = "";
+        if (microphoneDropdown != null && microphoneDropdown.options.Count > 0 && microphoneDropdown.interactable)
+        {
+            deviceName = microphoneDropdown.options[microphoneDropdown.value].text;
+        }
+        
+        int micPosition = Microphone.GetPosition(deviceName);
+        
+        // サンプルデータの取得
+        if (micPosition > 0 && samplesData.Length > 0)
+        {
+            int startReadPosition = (micPosition - samplesData.Length + microphoneClip.samples) % microphoneClip.samples;
+            microphoneClip.GetData(samplesData, startReadPosition);
+            
+            // 音声レベル（音量）の計算
+            float sum = 0f;
+            for (int i = 0; i < samplesData.Length; i++)
+            {
+                sum += Mathf.Abs(samplesData[i]);
+            }
+            
+            // 平均音量
+            currentVoiceLevel = sum / samplesData.Length;
+            
+            // UI更新
+            UpdateVoiceLevelUI();
+            
+            // 閾値との関係を視覚的に表示
+            bool isAboveThreshold = currentVoiceLevel > thresholdSlider.value;
+            
+            // 閾値を超えた時と下回った時で色を変える
+            if (voiceLevelBar != null)
+            {
+                voiceLevelBar.color = isAboveThreshold ? Color.green : Color.gray;
+            }
+        }
+    }
+    
+    // 音声レベルUIを更新
+    void UpdateVoiceLevelUI()
+    {
+        if (voiceLevelBar != null)
+        {
+            // 音量レベルを0～1の範囲にマッピング
+            // 最大値はスライダーの最大値の2倍くらいまで表示できるようにする
+            float maxDisplayValue = thresholdSlider.maxValue * 2.0f;
+            float normalizedLevel = Mathf.Clamp01(currentVoiceLevel / maxDisplayValue);
+            
+            // バーの塗りつぶし率を更新
+            voiceLevelBar.fillAmount = normalizedLevel;
+        }
+        
+        if (currentLevelText != null)
+        {
+            // 現在の音量レベルをテキストで表示
+            currentLevelText.text = currentVoiceLevel.ToString("F3");
+        }
+    }
 
     void GoBackToMainScene()
     {
+        // モニタリングを停止
+        StopMicrophoneMonitoring();
+        
         // メインシーンに戻る
         SceneManager.LoadScene("KotonoGem");
+    }
+    
+    void OnDestroy()
+    {
+        // シーン遷移時やアプリケーション終了時にマイクモニタリングを停止
+        StopMicrophoneMonitoring();
     }
 }
