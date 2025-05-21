@@ -33,6 +33,13 @@ public class SceneData
     public float enlargeFactorE;
     public float enlargeFactorF;
     public float enlargeFactorG;
+    public float totalA;
+    public float totalB;
+    public float totalC;
+    public float totalD;
+    public float totalE;
+    public float totalF;
+    public float totalG;
     public float generationThreshold;
     public int mainObjectIndex = -1; // メインオブジェクトのインデックス（-1は未選択）
 }
@@ -70,6 +77,16 @@ public class GameController : MonoBehaviour
     public float parameterE = 0.0f;
     public float parameterF = 0.0f;
     public float parameterG = 0.0f;
+
+    [Header("各パラメーター総計")]
+    public float totalA = 0.0f;
+    public float totalB = 0.0f;
+    public float totalC = 0.0f;
+    public float totalD = 0.0f;
+    public float totalE = 0.0f;
+    public float totalF = 0.0f;
+    public float totalG = 0.0f;
+
 
     [Header("生成半径（候補点取得時の閾値）")]
     public float generationThreshold = 0.3f;
@@ -176,6 +193,13 @@ public class GameController : MonoBehaviour
         sceneData.parameterE = parameterE;
         sceneData.parameterF = parameterF;
         sceneData.parameterG = parameterG;
+        sceneData.totalA = totalA;
+        sceneData.totalB = totalB;
+        sceneData.totalC = totalC;
+        sceneData.totalD = totalD;
+        sceneData.totalE = totalE;
+        sceneData.totalF = totalF;
+        sceneData.totalG = totalG;
         sceneData.enlargeFactorA = enlargeFactorA;
         sceneData.enlargeFactorB = enlargeFactorB;
         sceneData.enlargeFactorC = enlargeFactorC;
@@ -376,93 +400,141 @@ public class GameController : MonoBehaviour
     // このメソッドを感情データ受信後に呼び出す
     public void SetParametersFromJson(string jsonData)
     {
-        // SentimentAnalysisResponse は、前述のJSONパース用クラス
-        SentimentAnalysisResponse response = JsonUtility.FromJson<SentimentAnalysisResponse>(jsonData);
-        if (response != null && response.sentiment_analysis != null && response.sentiment_analysis.segments != null && response.sentiment_analysis.segments.Count > 0)
+        bool validDataReceived = false;
+        
+        try
         {
-            SentimentSegment seg = response.sentiment_analysis.segments[0];
-
-            // int型からfloat型へ変換
-            float energy = (float)seg.energy;
-            float dissatisfaction = (float)seg.dissatisfaction;
-            float excitement = (float)seg.excitement;
-            float anticipation = (float)seg.anticipation;
-            float hesitation = (float)seg.hesitation;
-            float atmosphere = (float)seg.atmosphere;
-
-            energy = energy / 2;
-
-            dissatisfaction = dissatisfaction / 5.0f;
-
-            if (excitement > 15.0f)
+            // SentimentAnalysisResponse は、前述のJSONパース用クラス
+            SentimentAnalysisResponse response = JsonUtility.FromJson<SentimentAnalysisResponse>(jsonData);
+            if (response != null && response.sentiment_analysis != null && response.sentiment_analysis.segments != null && response.sentiment_analysis.segments.Count > 0)
             {
-                excitement = (excitement - 15.0f) / 2.5f;
-            }
-            else
-            {
-                excitement = 0.0f;
-            }
+                SentimentSegment seg = response.sentiment_analysis.segments[0];
 
-            anticipation = anticipation / 13.3f;
+                // int型からfloat型へ変換
+                float energy = (float)seg.energy;
+                float dissatisfaction = (float)seg.dissatisfaction;
+                float excitement = (float)seg.excitement;
+                float anticipation = (float)seg.anticipation;
+                float hesitation = (float)seg.hesitation;
+                float atmosphere = (float)seg.atmosphere;
 
-            if (hesitation > 15.0f)
-            {
-                hesitation = (hesitation - 15.0f) / 2.5f;
-            }
-            else
-            {
-                hesitation = 0.0f;
-            }
+                energy = energy / 2;
+                dissatisfaction = dissatisfaction / 5.0f;
 
-            if (atmosphere != 0.0f)
-            {
-                if (atmosphere >= 1.0f)
+                if (excitement > 15.0f)
                 {
-                    if (atmosphere > 10.0f)
-                    {
-                        atmosphere = 10.0f;
-                    }
-                    excitement = excitement * (1.0f + atmosphere * 0.1f); 
-                    anticipation = anticipation * (1.0f + anticipation * 0.1f);
+                    excitement = (excitement - 15.0f) / 2.5f;
                 }
                 else
                 {
-                    atmosphere = atmosphere * -1.0f;
-                    if (atmosphere > 10.0f)
-                    {
-                        atmosphere = 10.0f;
-                    }
-                    dissatisfaction = dissatisfaction * (1.0f + dissatisfaction * 0.1f);
-                    hesitation = hesitation * (1.0f + hesitation * 0.1f);
+                    excitement = 0.0f;
                 }
+
+                anticipation = anticipation / 13.3f;
+
+                if (hesitation > 15.0f)
+                {
+                    hesitation = (hesitation - 15.0f) / 2.5f;
+                }
+                else
+                {
+                    hesitation = 0.0f;
+                }
+
+                if (atmosphere != 0.0f)
+                {
+                    if (atmosphere >= 1.0f)
+                    {
+                        if (atmosphere > 10.0f)
+                        {
+                            atmosphere = 10.0f;
+                        }
+                        excitement = excitement * (1.0f + atmosphere * 0.1f); 
+                        anticipation = anticipation * (1.0f + anticipation * 0.1f);
+                    }
+                    else
+                    {
+                        atmosphere = atmosphere * -1.0f;
+                        if (atmosphere > 10.0f)
+                        {
+                            atmosphere = 10.0f;
+                        }
+                        dissatisfaction = dissatisfaction * (1.0f + dissatisfaction * 0.1f);
+                        hesitation = hesitation * (1.0f + hesitation * 0.1f);
+                    }
+                }
+
+                // 任意の感情パラメータとGameControllerのパラメータをマッピング
+                // ストレスの値とか、高かったら生成半径を狭めてもいいかも
+                parameterA = energy;
+                parameterB = 0.0f;
+                parameterC = dissatisfaction;
+                parameterD = excitement;
+                parameterE = anticipation;
+                parameterF = 0.0f;
+                parameterG = hesitation;
+
+                enlargeFactorA = 1.0f + energy / 300.0f;
+                enlargeFactorB = 1.0f + 0.0f;
+                enlargeFactorC = 1.0f + dissatisfaction / 100.0f;
+                enlargeFactorD = 1.0f + excitement / 100.0f;
+                enlargeFactorE = 1.0f + anticipation / 100.0f;
+                enlargeFactorF = 1.0f + 0.0f;
+                enlargeFactorG = 1.0f + hesitation / 100.0f;
+
+                Debug.Log("パラメータを更新しました");
+                validDataReceived = true;
             }
-
-
-
-            // 任意の感情パラメータとGameControllerのパラメータをマッピング
-            // ストレスの値とか、高かったら生成半径を狭めてもいいかも
-            parameterA = energy;
-            parameterB = 0.0f;
-            parameterC = dissatisfaction;
-            parameterD = excitement;
-            parameterE = anticipation;
-            parameterF = 0.0f;
-            parameterG = hesitation;
-
-            enlargeFactorA = 1.0f + energy / 300.0f;
-            enlargeFactorB = 1.0f + 0.0f;
-            enlargeFactorC = 1.0f + dissatisfaction / 100.0f;
-            enlargeFactorD = 1.0f + excitement / 100.0f;
-            enlargeFactorE = 1.0f + anticipation / 100.0f;
-            enlargeFactorF = 1.0f + 0.0f;
-            enlargeFactorG = 1.0f + hesitation / 100.0f;
-
-            Debug.Log("パラメータを更新しました");
+            else
+            {
+                Debug.LogWarning("感情データが空または不正な形式です。モデルは生成されません。");
+                // データが不正の場合はモデルを生成しない
+                return;
+            }
         }
-        else
+        catch (System.Exception e)
         {
-            Debug.LogError("感情データのパースに失敗しました。");
+            Debug.LogError($"感情データのパースに失敗しました: {e.Message}");
+            // 例外発生時はモデルを生成しない
+            return;
         }
+        
+        // メインオブジェクトが存在しない場合は生成
+        if (currentMainObject == null)
+        {
+            GenerateRandomMainObject();
+        }
+
+        // 有効なデータを受信した場合のみ、自動的にモデルを生成
+        if (validDataReceived)
+        {
+            GenerateAllModels();
+            ScaleUpModels();
+        }
+    }
+
+    // デフォルトパラメータを設定するヘルパーメソッド
+    private void SetDefaultParameters()
+    {
+        // デフォルトの感情パラメータ値を設定
+        parameterA = 1.0f;  // energy
+        parameterB = 0.0f;
+        parameterC = 0.5f;  // dissatisfaction
+        parameterD = 0.5f;  // excitement
+        parameterE = 0.5f;  // anticipation
+        parameterF = 0.0f;
+        parameterG = 0.5f;  // hesitation
+        
+        // デフォルトの拡大倍率を設定
+        enlargeFactorA = 1.0f;
+        enlargeFactorB = 1.0f;
+        enlargeFactorC = 1.0f;
+        enlargeFactorD = 1.0f;
+        enlargeFactorE = 1.0f;
+        enlargeFactorF = 1.0f;
+        enlargeFactorG = 1.0f;
+        
+        Debug.Log("デフォルトパラメータを設定しました");
     }
 
 
@@ -500,6 +572,7 @@ public class GameController : MonoBehaviour
         GameObject selectedPrefab = glassPrefabs[randomIndex];
         currentMainObject = Instantiate(selectedPrefab, new Vector3(0, 1, 0), Quaternion.identity);
         Debug.Log($"メインオブジェクト {selectedPrefab.name} を生成しました！");
+        SaveScene();
     }
 
     // ── AttachModelA：ボタンA専用 ──
@@ -655,6 +728,7 @@ public class GameController : MonoBehaviour
         AttachModel(modelFPrefabs, ref parameterF, attachedModelsF, true);
         AttachModel(modelGPrefabs, ref parameterG, attachedModelsG, true);
         Debug.Log("すべてのモデルを一括生成しました！");
+        SaveScene();
     }
 
     // ── ヘルパー関数 ──
@@ -709,6 +783,7 @@ public class GameController : MonoBehaviour
         ScaleModelList(attachedModelsG, enlargeFactorG);
 
         Debug.Log("すべてのモデルを拡大しました！各モデルごとに個別の拡大倍率が適用されました。");
+        SaveScene();
     }
 
     // 拡大用ヘルパーメソッド

@@ -26,7 +26,8 @@ public class ButtonScript : MonoBehaviour
     
     // 自動録音用のUI要素
     [Header("Auto Recording Settings")]
-    public Toggle autoRecordToggle;
+    public Button autoRecordOnButton;    // 自動録音をオンにするボタン
+    public Button autoRecordOffButton;   // 自動録音をオフにするボタン
     public Text autoRecordStatusText;
     
     private string apiUrl = "https://acp-api-async.amivoice.com/v1/recognitions";
@@ -106,15 +107,21 @@ public class ButtonScript : MonoBehaviour
         sendButton.onClick.AddListener(() => StartCoroutine(ReadApiKeyAndPostRequest()));
         recButton.onClick.AddListener(() => StartCoroutine(StartRec()));
         
-        // 自動録音のトグルイベントを設定
-        if (autoRecordToggle != null)
+        // 自動録音のボタンイベントを設定
+        if (autoRecordOnButton != null && autoRecordOffButton != null)
         {
-            autoRecordToggle.onValueChanged.AddListener(ToggleAutoRecording);
+            autoRecordOnButton.onClick.AddListener(StartAutoRecording);
+            autoRecordOffButton.onClick.AddListener(StopAutoRecording);
+            
+            // 初期状態でオフボタンは非表示
+            autoRecordOffButton.gameObject.SetActive(false);
+            autoRecordOnButton.gameObject.SetActive(true);
+            
             UpdateAutoRecordStatus();
         }
         else
         {
-            Debug.LogWarning("自動録音トグルがInspectorにアタッチされていません");
+            Debug.LogWarning("自動録音ボタンがInspectorにアタッチされていません");
         }
     }
     
@@ -160,23 +167,33 @@ public class ButtonScript : MonoBehaviour
         }
     }
     
-    // 自動録音トグルの状態変更時に呼ばれる
-    public void ToggleAutoRecording(bool isOn)
+    // 自動録音オンボタンが押されたときに呼ばれる
+    public void StartAutoRecording()
     {
-        isAutoRecordEnabled = isOn;
-        UpdateAutoRecordStatus();
+        isAutoRecordEnabled = true;
         
-        if (isAutoRecordEnabled)
+        // ボタンの表示を切り替え
+        autoRecordOnButton.gameObject.SetActive(false);
+        autoRecordOffButton.gameObject.SetActive(true);
+        
+        UpdateAutoRecordStatus();
+        StartListeningForVoice();
+    }
+    
+    // 自動録音オフボタンが押されたときに呼ばれる
+    public void StopAutoRecording()
+    {
+        isAutoRecordEnabled = false;
+        
+        // ボタンの表示を切り替え
+        autoRecordOffButton.gameObject.SetActive(false);
+        autoRecordOnButton.gameObject.SetActive(true);
+        
+        UpdateAutoRecordStatus();
+        StopListeningForVoice();
+        if (isRecording)
         {
-            StartListeningForVoice();
-        }
-        else
-        {
-            StopListeningForVoice();
-            if (isRecording)
-            {
-                StopRecording();
-            }
+            StopRecording();
         }
     }
     
