@@ -33,17 +33,74 @@ public class SceneData
     public float enlargeFactorE;
     public float enlargeFactorF;
     public float enlargeFactorG;
-    public float totalA;
-    public float totalB;
-    public float totalC;
-    public float totalD;
-    public float totalE;
-    public float totalF;
-    public float totalG;
     public float generationThreshold;
     public int mainObjectIndex = -1; // メインオブジェクトのインデックス（-1は未選択）
+    public float totalEnergy;
+    public float totalContent;
+    public float totalUpset;
+    public float totalAggression;
+    public float totalStress;
+    public float totalUncertainty;
+    public float totalExcitement;
+    public float totalConcentration;
+    public float totalEmoCog;
+    public float totalHesitation;
+    public float totalBrainPower;
+    public float totalEmbarrassment;
+    public float totalIntensiveThinking;
+    public float totalImaginationActivity;
+    public float totalExtremeEmotion;
+    public float totalPassionate;
+    public float totalAtmosphere;
+    public float totalAnticipation;
+    public float totalDissatisfaction;
+    public float totalConfidence;
 }
 
+// 感情データ表示用 UI Text
+[Header("感情データ表示用 UI")]
+public Text textEnergy;        // Energy
+public Text textContent;       // Content
+public Text textUpset;         // Upset
+public Text textAggression;    // Aggression
+public Text textStress;        // Stress
+public Text textUncertainty;   // Uncertainty
+public Text textExcitement;    // Excitement 
+public Text textConcentration; // Concentration
+public Text textEmoCog;        // Emo Cog
+public Text textHesitation;    // Hesitation
+public Text textBrainPower;    // Brain Power
+public Text textEmbarrassment; // Embarrassment
+public Text textIntensiveThinking;  // Intensive Thinking
+public Text textImaginationActivity; // Imagination Activity
+public Text textExtremeEmotion;  // Extreme Emotion
+public Text textPassionate;    // Passionate
+public Text textAtmosphere;    // Atmosphere
+public Text textAnticipation;  // Anticipation
+public Text textDissatisfaction; // Dissatisfaction
+public Text textConfidence;    // Confidence
+
+[Header("感情データの累積値")]
+private float totalEnergy = 0f;
+private float totalContent = 0f;
+private float totalUpset = 0f;
+private float totalAggression = 0f;
+private float totalStress = 0f;
+private float totalUncertainty = 0f;
+private float totalExcitement = 0f;
+private float totalConcentration = 0f;
+private float totalEmoCog = 0f;
+private float totalHesitation = 0f;
+private float totalBrainPower = 0f;
+private float totalEmbarrassment = 0f;
+private float totalIntensiveThinking = 0f;
+private float totalImaginationActivity = 0f;
+private float totalExtremeEmotion = 0f;
+private float totalPassionate = 0f;
+private float totalAtmosphere = 0f;
+private float totalAnticipation = 0f;
+private float totalDissatisfaction = 0f;
+private float totalConfidence = 0f;
 
 public class GameController : MonoBehaviour
 {
@@ -151,7 +208,7 @@ public class GameController : MonoBehaviour
         // 新規ボタンのリスナー追加
         if (buttonSave != null) buttonSave.onClick.AddListener(SaveScene);
         if (buttonLoad != null) buttonLoad.onClick.AddListener(LoadScene);
-        
+
         // 保存ファイルパスの設定
         saveFilePath = Path.Combine(Application.persistentDataPath, saveFileName);
         Debug.Log($"保存ファイルパス: {saveFilePath}");
@@ -209,6 +266,28 @@ public class GameController : MonoBehaviour
         sceneData.enlargeFactorG = enlargeFactorG;
         sceneData.generationThreshold = generationThreshold;
 
+        // 感情データの累積値を保存
+        sceneData.totalEnergy = totalEnergy;
+        sceneData.totalContent = totalContent;
+        sceneData.totalUpset = totalUpset;
+        sceneData.totalAggression = totalAggression;
+        sceneData.totalStress = totalStress;
+        sceneData.totalUncertainty = totalUncertainty;
+        sceneData.totalExcitement = totalExcitement;
+        sceneData.totalConcentration = totalConcentration;
+        sceneData.totalEmoCog = totalEmoCog;
+        sceneData.totalHesitation = totalHesitation;
+        sceneData.totalBrainPower = totalBrainPower;
+        sceneData.totalEmbarrassment = totalEmbarrassment;
+        sceneData.totalIntensiveThinking = totalIntensiveThinking;
+        sceneData.totalImaginationActivity = totalImaginationActivity;
+        sceneData.totalExtremeEmotion = totalExtremeEmotion;
+        sceneData.totalPassionate = totalPassionate;
+        sceneData.totalAtmosphere = totalAtmosphere;
+        sceneData.totalAnticipation = totalAnticipation;
+        sceneData.totalDissatisfaction = totalDissatisfaction;
+        sceneData.totalConfidence = totalConfidence;
+
         // メインオブジェクトの情報を保存
         SavedObjectData mainObjectData = new SavedObjectData
         {
@@ -243,11 +322,11 @@ public class GameController : MonoBehaviour
 
         // データをJSONに変換
         string jsonData = JsonUtility.ToJson(sceneData, true);
-        
+
         // ファイルに保存
         File.WriteAllText(saveFilePath, jsonData);
         Debug.Log($"保存したJSONデータ: {jsonData}");
-        
+
         Debug.Log($"シーンを保存しました: {saveFilePath}");
     }
 
@@ -257,7 +336,7 @@ public class GameController : MonoBehaviour
         foreach (GameObject model in modelList)
         {
             if (model == null) continue;
-            
+
             SavedObjectData modelData = new SavedObjectData
             {
                 position = model.transform.position,
@@ -265,7 +344,7 @@ public class GameController : MonoBehaviour
                 scale = model.transform.localScale,
                 type = type
             };
-            
+
             // プレハブ名とインデックスを特定
             for (int i = 0; i < prefabs.Length; i++)
             {
@@ -276,7 +355,7 @@ public class GameController : MonoBehaviour
                     break;
                 }
             }
-            
+
             objectsList.Add(modelData);
         }
     }
@@ -289,14 +368,14 @@ public class GameController : MonoBehaviour
             Debug.LogWarning($"保存ファイルが見つかりません: {saveFilePath}");
             return;
         }
-        
+
         // 現在のオブジェクトをすべて削除
         DeleteAllObjects();
-        
+
         // ファイルからJSONを読み込み
         string jsonData = File.ReadAllText(saveFilePath);
         SceneData sceneData = JsonUtility.FromJson<SceneData>(jsonData);
-        
+
         if (sceneData == null)
         {
             Debug.LogError("保存データの読み込みに失敗しました");
@@ -320,6 +399,31 @@ public class GameController : MonoBehaviour
         enlargeFactorG = sceneData.enlargeFactorG;
         generationThreshold = sceneData.generationThreshold;
 
+        // 感情データの累積値を復元
+        totalEnergy = sceneData.totalEnergy;
+        totalContent = sceneData.totalContent;
+        totalUpset = sceneData.totalUpset;
+        totalAggression = sceneData.totalAggression;
+        totalStress = sceneData.totalStress;
+        totalUncertainty = sceneData.totalUncertainty;
+        totalExcitement = sceneData.totalExcitement;
+        totalConcentration = sceneData.totalConcentration;
+        totalEmoCog = sceneData.totalEmoCog;
+        totalHesitation = sceneData.totalHesitation;
+        totalBrainPower = sceneData.totalBrainPower;
+        totalEmbarrassment = sceneData.totalEmbarrassment;
+        totalIntensiveThinking = sceneData.totalIntensiveThinking;
+        totalImaginationActivity = sceneData.totalImaginationActivity;
+        totalExtremeEmotion = sceneData.totalExtremeEmotion;
+        totalPassionate = sceneData.totalPassionate;
+        totalAtmosphere = sceneData.totalAtmosphere;
+        totalAnticipation = sceneData.totalAnticipation;
+        totalDissatisfaction = sceneData.totalDissatisfaction;
+        totalConfidence = sceneData.totalConfidence;
+
+        // UI表示を更新
+        UpdateSentimentUI();
+
         // オブジェクトを復元
         foreach (SavedObjectData objData in sceneData.objects)
         {
@@ -327,7 +431,7 @@ public class GameController : MonoBehaviour
             {
                 // メインオブジェクトを復元
                 currentMainObject = Instantiate(
-                    glassPrefabs[sceneData.mainObjectIndex], 
+                    glassPrefabs[sceneData.mainObjectIndex],
                     objData.position,
                     objData.rotation
                 );
@@ -338,7 +442,7 @@ public class GameController : MonoBehaviour
                 // 各モデルを復元
                 GameObject[] prefabArray = GetPrefabArrayByType(objData.type);
                 List<GameObject> modelList = GetModelListByType(objData.type);
-                
+
                 if (prefabArray != null && objData.prefabIndex >= 0 && objData.prefabIndex < prefabArray.Length)
                 {
                     GameObject newModel = Instantiate(
@@ -347,12 +451,12 @@ public class GameController : MonoBehaviour
                         objData.rotation
                     );
                     newModel.transform.localScale = objData.scale;
-                    
+
                     if (currentMainObject != null)
                     {
                         newModel.transform.SetParent(currentMainObject.transform);
                     }
-                    
+
                     if (modelList != null)
                     {
                         modelList.Add(newModel);
@@ -401,7 +505,7 @@ public class GameController : MonoBehaviour
     public void SetParametersFromJson(string jsonData)
     {
         bool validDataReceived = false;
-        
+
         try
         {
             // SentimentAnalysisResponse は、前述のJSONパース用クラス
@@ -417,6 +521,31 @@ public class GameController : MonoBehaviour
                 float anticipation = (float)seg.anticipation;
                 float hesitation = (float)seg.hesitation;
                 float atmosphere = (float)seg.atmosphere;
+
+                // 感情データの累積値に加算
+                totalEnergy += energy;
+                totalContent += (float)seg.content;
+                totalUpset += (float)seg.upset;
+                totalAggression += (float)seg.aggression;
+                totalStress += (float)seg.stress;
+                totalUncertainty += (float)seg.uncertainty;
+                totalExcitement += excitement;
+                totalConcentration += (float)seg.concentration;
+                totalEmoCog += (float)seg.emo_cog;
+                totalHesitation += hesitation;
+                totalBrainPower += (float)seg.brain_power;
+                totalEmbarrassment += (float)seg.embarrassment;
+                totalIntensiveThinking += (float)seg.intensive_thinking;
+                totalImaginationActivity += (float)seg.imagination_activity;
+                totalExtremeEmotion += (float)seg.extreme_emotion;
+                totalPassionate += (float)seg.passionate;
+                totalAtmosphere += atmosphere;
+                totalAnticipation += anticipation;
+                totalDissatisfaction += dissatisfaction;
+                totalConfidence += (float)seg.confidence;
+
+                // UI表示を更新
+                UpdateSentimentUI();
 
                 energy = energy / 2;
                 dissatisfaction = dissatisfaction / 5.0f;
@@ -449,7 +578,7 @@ public class GameController : MonoBehaviour
                         {
                             atmosphere = 10.0f;
                         }
-                        excitement = excitement * (1.0f + atmosphere * 0.1f); 
+                        excitement = excitement * (1.0f + atmosphere * 0.1f);
                         anticipation = anticipation * (1.0f + anticipation * 0.1f);
                     }
                     else
@@ -498,7 +627,7 @@ public class GameController : MonoBehaviour
             // 例外発生時はモデルを生成しない
             return;
         }
-        
+
         // メインオブジェクトが存在しない場合は生成
         if (currentMainObject == null)
         {
@@ -524,7 +653,7 @@ public class GameController : MonoBehaviour
         parameterE = 0.5f;  // anticipation
         parameterF = 0.0f;
         parameterG = 0.5f;  // hesitation
-        
+
         // デフォルトの拡大倍率を設定
         enlargeFactorA = 1.0f;
         enlargeFactorB = 1.0f;
@@ -533,7 +662,7 @@ public class GameController : MonoBehaviour
         enlargeFactorE = 1.0f;
         enlargeFactorF = 1.0f;
         enlargeFactorG = 1.0f;
-        
+
         Debug.Log("デフォルトパラメータを設定しました");
     }
 
@@ -813,7 +942,11 @@ public class GameController : MonoBehaviour
         DeleteModelList(attachedModelsF);
         DeleteModelList(attachedModelsG);
 
-        Debug.Log("すべてのオブジェクトを削除しました！");
+        // 感情データの累積値をリセット
+        ResetSentimentTotals();
+        UpdateSentimentUI();
+
+        Debug.Log("すべてのオブジェクトを削除し、感情データの累積値をリセットしました！");
     }
 
     // モデルリストを削除するヘルパーメソッド
@@ -825,5 +958,56 @@ public class GameController : MonoBehaviour
                 Destroy(model);
         }
         modelList.Clear();
+    }
+
+    // 累積値をリセットするメソッド
+    void ResetSentimentTotals()
+    {
+        totalEnergy = 0f;
+        totalContent = 0f;
+        totalUpset = 0f;
+        totalAggression = 0f;
+        totalStress = 0f;
+        totalUncertainty = 0f;
+        totalExcitement = 0f;
+        totalConcentration = 0f;
+        totalEmoCog = 0f;
+        totalHesitation = 0f;
+        totalBrainPower = 0f;
+        totalEmbarrassment = 0f;
+        totalIntensiveThinking = 0f;
+        totalImaginationActivity = 0f;
+        totalExtremeEmotion = 0f;
+        totalPassionate = 0f;
+        totalAtmosphere = 0f;
+        totalAnticipation = 0f;
+        totalDissatisfaction = 0f;
+        totalConfidence = 0f;
+    }
+
+    // UI表示を更新するメソッド
+    void UpdateSentimentUI()
+    {
+        // 各UI Textコンポーネントがnullでないことを確認して値を更新
+        if (textEnergy != null) textEnergy.text = $"Energy: {totalEnergy:F2}";
+        if (textContent != null) textContent.text = $"Content: {totalContent:F2}";
+        if (textUpset != null) textUpset.text = $"Upset: {totalUpset:F2}";
+        if (textAggression != null) textAggression.text = $"Aggression: {totalAggression:F2}";
+        if (textStress != null) textStress.text = $"Stress: {totalStress:F2}";
+        if (textUncertainty != null) textUncertainty.text = $"Uncertainty: {totalUncertainty:F2}";
+        if (textExcitement != null) textExcitement.text = $"Excitement: {totalExcitement:F2}";
+        if (textConcentration != null) textConcentration.text = $"Concentration: {totalConcentration:F2}";
+        if (textEmoCog != null) textEmoCog.text = $"Emo Cog: {totalEmoCog:F2}";
+        if (textHesitation != null) textHesitation.text = $"Hesitation: {totalHesitation:F2}";
+        if (textBrainPower != null) textBrainPower.text = $"Brain Power: {totalBrainPower:F2}";
+        if (textEmbarrassment != null) textEmbarrassment.text = $"Embarrassment: {totalEmbarrassment:F2}";
+        if (textIntensiveThinking != null) textIntensiveThinking.text = $"Intensive Thinking: {totalIntensiveThinking:F2}";
+        if (textImaginationActivity != null) textImaginationActivity.text = $"Imagination Activity: {totalImaginationActivity:F2}";
+        if (textExtremeEmotion != null) textExtremeEmotion.text = $"Extreme Emotion: {totalExtremeEmotion:F2}";
+        if (textPassionate != null) textPassionate.text = $"Passionate: {totalPassionate:F2}";
+        if (textAtmosphere != null) textAtmosphere.text = $"Atmosphere: {totalAtmosphere:F2}";
+        if (textAnticipation != null) textAnticipation.text = $"Anticipation: {totalAnticipation:F2}";
+        if (textDissatisfaction != null) textDissatisfaction.text = $"Dissatisfaction: {totalDissatisfaction:F2}";
+        if (textConfidence != null) textConfidence.text = $"Confidence: {totalConfidence:F2}";
     }
 }
