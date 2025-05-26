@@ -14,190 +14,143 @@ public class ButtonScript : MonoBehaviour
     [Header("GameController Reference")]
     public GameController gameController;
 
-    // Inspectorで必ずアタッチする
     [Header("UI Elements (Assign in Inspector)")]
-    public Button sendButton;
-    public Button sampleButton;  // 必要であれば利用
     public Button recButton;
-    public GameObject recSec;    // 録音秒数を表示・入力するTextが含まれるオブジェクト
-    public InputField json;      // APIの進捗などを表示
-    public InputField jsontext;  // 結果データを表示
     public Button settingsButton;
     
-    // 自動録音用のUI要素
     [Header("Auto Recording Settings")]
-    public Button autoRecordOnButton;    // 自動録音をオンにするボタン
-    public Button autoRecordOffButton;   // 自動録音をオフにするボタン
+    public Button autoRecordOnButton;
+    public Button autoRecordOffButton;
     public Text autoRecordStatusText;
     
     private string apiUrl = "https://acp-api-async.amivoice.com/v1/recognitions";
-    private string sampleUrl = "https://acp-dsrpp.amivoice.com/v1/sentiment-analysis/ja/result-parameters.json";
-    private string apiKeyFilePath;
     private string audioFilePath;
     private string sessionID;
     private string microphone;
     private AudioClip microphoneInput;
-    private int RECORD_LENGTH_SEC = 20;
-    private const int SAMPLE_RATE = 41100;
+    private int RECORD_LENGTH_SEC = 20; 
+    private const int SAMPLE_RATE = 41100; 
     
-    // 自動録音用の変数
     private bool isAutoRecordEnabled = false;
     private bool isListeningForVoice = false;
     private bool isRecording = false;
-    private float[] samples = new float[128];
+    private float[] samples = new float[128]; 
     private float lastVoiceDetectedTime = 0f;
     
-    // システム設定の参照（SettingsManagerから読み込む）
     private float voiceDetectionThreshold = 0.02f;
     private float silenceDetectionTime = 2.0f;
     private string selectedMicrophone = "";
 
     void Start()
     {
-        // 手動アタッチが正しく行われているか確認
-        if (sendButton == null || recButton == null || json == null || jsontext == null || recSec == null)
+        if (recButton == null) 
         {
-            Debug.LogError("InspectorにUI要素が正しく割り当てられていません。各フィールドを確認してください。");
+            Debug.LogError("ButtonScript: InspectorにUI要素が正しく割り当てられていません。");
             return;
         }
-
-        json.text = "Start";
 
         if (settingsButton != null)
         {
             settingsButton.onClick.AddListener(OpenSettingsScene);
         }
 
-        // 設定を読み込む
-        LoadSettings();
+        LoadSettings(); 
 
-        // マイクの設定
-        // 設定で選択されたマイクを優先的に使用
+        if (Microphone.devices.Length == 0)
+        {
+            Debug.LogError("ButtonScript: マイクが見つかりません。");
+            microphone = null; 
+            if (recButton != null) recButton.interactable = false;
+            if (autoRecordOnButton != null) autoRecordOnButton.interactable = false;
+            return;
+        }
+        
         if (!string.IsNullOrEmpty(selectedMicrophone) && Array.IndexOf(Microphone.devices, selectedMicrophone) >= 0)
         {
             microphone = selectedMicrophone;
         }
         else
         {
-            microphone = Microphone.devices.FirstOrDefault();
+            microphone = Microphone.devices[0]; 
         }
-        
-        Debug.Log("microphone: " + microphone);
-        if (microphone == null)
-        {
-            Debug.LogError("No microphone found");
-            return;
-        }
+        Debug.Log("ButtonScript: 使用マイク: " + microphone);
 
-        // プラットフォーム別にファイル保存先を設定
-        if (Application.platform == RuntimePlatform.Android)
-        {
+        #if UNITY_ANDROID && !UNITY_EDITOR
             audioFilePath = Path.Combine(Application.persistentDataPath, "test.wav");
-        }
-        else if (Application.platform == RuntimePlatform.IPhonePlayer)
-        {
+        #elif UNITY_IOS && !UNITY_EDITOR
             audioFilePath = Path.Combine(Application.persistentDataPath, "test.wav");
-        }
-        else
-        {
-            audioFilePath = Path.Combine(Application.streamingAssetsPath, "test.wav");
-        }
+        #else
+            audioFilePath = Path.Combine(Application.persistentDataPath, "test.wav");
+        #endif
+        Debug.Log("ButtonScript: オーディオファイルパス: " + audioFilePath);
 
-        // ボタンのクリックイベントにリスナーを設定（手動アタッチ済みのため直接利用）
-        sendButton.onClick.AddListener(() => StartCoroutine(ReadApiKeyAndPostRequest()));
         recButton.onClick.AddListener(() => StartCoroutine(StartRec()));
         
-        // 自動録音のボタンイベントを設定
         if (autoRecordOnButton != null && autoRecordOffButton != null)
         {
             autoRecordOnButton.onClick.AddListener(StartAutoRecording);
             autoRecordOffButton.onClick.AddListener(StopAutoRecording);
-            
-            // 初期状態でオフボタンは非表示
             autoRecordOffButton.gameObject.SetActive(false);
             autoRecordOnButton.gameObject.SetActive(true);
-            
             UpdateAutoRecordStatus();
         }
         else
         {
-            Debug.LogWarning("自動録音ボタンがInspectorにアタッチされていません");
+            Debug.LogWarning("ButtonScript: 自動録音ボタンがInspectorにアタッチされていません。");
         }
     }
     
-    // 設定ファイルから設定を読み込む
     void LoadSettings()
     {
         try
         {
-            // SettingsManagerと同じファイル名を使用
             string settingsPath = Path.Combine(Application.persistentDataPath, "micsettings.json");
             if (File.Exists(settingsPath))
             {
                 string jsonData = File.ReadAllText(settingsPath);
                 SettingsManager.MicSettings settings = JsonUtility.FromJson<SettingsManager.MicSettings>(jsonData);
                 
-                // 設定を読み込む
                 voiceDetectionThreshold = settings.voiceDetectionThreshold;
                 silenceDetectionTime = settings.silenceDetectionTime;
-                RECORD_LENGTH_SEC = settings.recordLengthSec;
+                RECORD_LENGTH_SEC = settings.recordLengthSec; 
                 selectedMicrophone = settings.selectedMicrophone;
                 
-                // recSecに録音時間を設定
-                if (recSec != null && recSec.GetComponent<Text>() != null)
-                {
-                    recSec.GetComponent<Text>().text = RECORD_LENGTH_SEC.ToString();
-                }
-                
-                Debug.Log($"マイク設定を読み込みました: 閾値={voiceDetectionThreshold}, 無音検出時間={silenceDetectionTime}, 録音時間={RECORD_LENGTH_SEC}秒, マイク={selectedMicrophone}");
+                Debug.Log($"ButtonScript: マイク設定読み込み: 閾値={voiceDetectionThreshold}, 無音時間={silenceDetectionTime}, 録音長={RECORD_LENGTH_SEC}s, マイク={selectedMicrophone}");
             }
             else
             {
-                Debug.Log("設定ファイルが見つからないため、デフォルト値を使用します");
-                // recSecにデフォルト値を設定
-                if (recSec != null && recSec.GetComponent<Text>() != null)
-                {
-                    recSec.GetComponent<Text>().text = RECORD_LENGTH_SEC.ToString();
-                }
+                Debug.Log("ButtonScript: 設定ファイルが見つからないためデフォルト値を使用します。RECORD_LENGTH_SECは初期値の " + RECORD_LENGTH_SEC + " のままです。");
             }
         }
         catch (Exception e)
         {
-            Debug.LogError("設定の読み込みに失敗: " + e.Message);
+            Debug.LogError("ButtonScript: 設定の読み込みに失敗: " + e.Message);
         }
     }
     
-    // 自動録音オンボタンが押されたときに呼ばれる
     public void StartAutoRecording()
     {
+        if (microphone == null) {
+            Debug.LogError("ButtonScript: マイクが利用できないため自動録音を開始できません。");
+            return;
+        }
         isAutoRecordEnabled = true;
-        
-        // ボタンの表示を切り替え
-        autoRecordOnButton.gameObject.SetActive(false);
-        autoRecordOffButton.gameObject.SetActive(true);
-        
+        if(autoRecordOnButton != null) autoRecordOnButton.gameObject.SetActive(false);
+        if(autoRecordOffButton != null) autoRecordOffButton.gameObject.SetActive(true);
         UpdateAutoRecordStatus();
         StartListeningForVoice();
     }
     
-    // 自動録音オフボタンが押されたときに呼ばれる
     public void StopAutoRecording()
     {
         isAutoRecordEnabled = false;
-        
-        // ボタンの表示を切り替え
-        autoRecordOffButton.gameObject.SetActive(false);
-        autoRecordOnButton.gameObject.SetActive(true);
-        
+        if(autoRecordOffButton != null) autoRecordOffButton.gameObject.SetActive(false);
+        if(autoRecordOnButton != null) autoRecordOnButton.gameObject.SetActive(true);
         UpdateAutoRecordStatus();
         StopListeningForVoice();
-        if (isRecording)
-        {
-            StopRecording();
-        }
+        if (isRecording) StopRecording();
     }
     
-    // 自動録音状態テキストを更新
     void UpdateAutoRecordStatus()
     {
         if (autoRecordStatusText != null)
@@ -207,140 +160,169 @@ public class ButtonScript : MonoBehaviour
         }
     }
     
-    // 音声検出のためのリスニング開始
     void StartListeningForVoice()
     {
-        if (!isListeningForVoice && !isRecording)
-        {
-            isListeningForVoice = true;
-            Debug.Log("音声検出リスニングを開始します");
-            
-            // 音声検出用マイク入力の開始
-            AudioClip listeningClip = Microphone.Start(microphone, true, 1, SAMPLE_RATE);
-            StartCoroutine(MonitorAudioLevel(listeningClip));
+        if (microphone == null || !isAutoRecordEnabled || isListeningForVoice || isRecording) return;
+
+        isListeningForVoice = true;
+        Debug.Log("ButtonScript: 音声検出リスニングを開始します。");
+        AudioClip listeningClip = Microphone.Start(microphone, true, 1, SAMPLE_RATE); 
+        if (listeningClip == null) {
+            Debug.LogError("ButtonScript: マイクの起動に失敗しました (音声検出用)。");
+            isListeningForVoice = false;
+            return;
         }
+        StartCoroutine(MonitorAudioLevel(listeningClip));
     }
     
-    // 音声検出のためのリスニング停止
     void StopListeningForVoice()
     {
-        if (isListeningForVoice)
+        if (microphone != null && Microphone.IsRecording(microphone) && isListeningForVoice) 
         {
-            isListeningForVoice = false;
             Microphone.End(microphone);
-            Debug.Log("音声検出リスニングを停止しました");
+            Debug.Log("ButtonScript: 音声検出リスニングを停止しました。");
         }
+        isListeningForVoice = false; 
     }
     
-    // 音声レベルのモニタリング
     IEnumerator MonitorAudioLevel(AudioClip clip)
     {
+        if (clip == null) {
+             Debug.LogError("ButtonScript: MonitorAudioLevelに渡されたAudioClipがnullです。");
+             isListeningForVoice = false; 
+             yield break;
+        }
+
+        yield return new WaitForSeconds(0.1f); 
+
         while (isListeningForVoice && isAutoRecordEnabled && !isRecording)
         {
-            // サンプルデータを取得
-            clip.GetData(samples, 0);
-            
-            // 音量レベルを計算
-            float rmsValue = 0f;
-            foreach (float sample in samples)
-            {
-                rmsValue += sample * sample;
+            if (!Microphone.IsRecording(microphone)) {
+                Debug.LogWarning("ButtonScript: モニタリング中にマイクが停止しました。リスニングを再試行します。");
+                isListeningForVoice = false; 
+                StartListeningForVoice(); 
+                yield break; 
             }
+
+            int micPosition = Microphone.GetPosition(microphone);
+            if (micPosition < samples.Length) { 
+                 yield return null;
+                 continue;
+            }
+
+            clip.GetData(samples, micPosition - samples.Length); 
+            
+            float rmsValue = 0f;
+            foreach (float sample in samples) rmsValue += sample * sample;
             rmsValue = Mathf.Sqrt(rmsValue / samples.Length);
             
-            // 閾値を超えた場合、録音開始
             if (rmsValue > voiceDetectionThreshold)
             {
-                Debug.Log("音声を検出: レベル " + rmsValue);
-                StopListeningForVoice();
+                Debug.Log("ButtonScript: 音声検出 (レベル: " + rmsValue + ")。自動録音を開始します。");
+                StopListeningForVoice(); 
                 StartCoroutine(StartAutomaticRecording());
-                yield break;
+                yield break; 
             }
-            
             yield return null;
         }
+        isListeningForVoice = false; 
     }
     
-    // 自動録音の開始
     IEnumerator StartAutomaticRecording()
     {
-        if (!isRecording && isAutoRecordEnabled)
-        {
-            isRecording = true;
-            Debug.Log("自動録音を開始します");
-            json.text = "自動録音中...";
-            
-            // 録音開始
-            microphoneInput = Microphone.Start(microphone, true, RECORD_LENGTH_SEC, SAMPLE_RATE);
-            
-            lastVoiceDetectedTime = Time.time;
-            
-            // 録音中の音声レベルをモニタリング
-            StartCoroutine(MonitorSilence());
+        if (isRecording || !isAutoRecordEnabled || microphone == null) yield break;
+
+        isRecording = true;
+        Debug.Log("ButtonScript: 自動録音を開始します。(" + RECORD_LENGTH_SEC + "秒間)");
+        
+        microphoneInput = Microphone.Start(microphone, false, RECORD_LENGTH_SEC, SAMPLE_RATE); 
+        if (microphoneInput == null) {
+            Debug.LogError("ButtonScript: マイクの起動に失敗しました (自動録音用)。");
+            isRecording = false;
+            if (isAutoRecordEnabled) StartListeningForVoice(); 
+            yield break;
         }
-        yield return null;
+        
+        lastVoiceDetectedTime = Time.time;
+        StartCoroutine(MonitorSilenceDuringRecording()); 
     }
     
-    // 無音区間の検出
-    IEnumerator MonitorSilence()
+    IEnumerator MonitorSilenceDuringRecording() 
     {
-        float[] silenceSamples = new float[128];
-        bool hasDetectedSilence = false;
-        
+        if (microphoneInput == null) {
+            Debug.LogError("ButtonScript: MonitorSilenceDuringRecordingに渡されたmicrophoneInputがnullです。");
+            if (isRecording) StopRecording(); 
+            yield break;
+        }
+        bool initialVoiceDetected = false; 
+        float recordingStartTime = Time.time;
+
         while (isRecording && isAutoRecordEnabled)
         {
-            // 音量レベルを確認
-            microphoneInput.GetData(silenceSamples, microphoneInput.samples - 128);
+            if (!Microphone.IsRecording(microphone)) { 
+                Debug.LogWarning("ButtonScript: 自動録音中にマイクが停止しました。");
+                StopRecording(); 
+                yield break;
+            }
+
+            if (Time.time - recordingStartTime >= RECORD_LENGTH_SEC) {
+                Debug.Log("ButtonScript: 最大録音時間に達しました。録音を終了します。");
+                StopRecording();
+                yield break;
+            }
+
+            int micPosition = Microphone.GetPosition(microphone);
+            if (micPosition < samples.Length) {
+                 yield return null;
+                 continue;
+            }
+            microphoneInput.GetData(samples, micPosition - samples.Length);
             
             float rmsValue = 0f;
-            foreach (float sample in silenceSamples)
-            {
-                rmsValue += sample * sample;
-            }
-            rmsValue = Mathf.Sqrt(rmsValue / silenceSamples.Length);
+            foreach (float sample in samples) rmsValue += sample * sample;
+            rmsValue = Mathf.Sqrt(rmsValue / samples.Length);
             
-            // 音声がある場合は最終検出時間を更新
             if (rmsValue > voiceDetectionThreshold)
             {
                 lastVoiceDetectedTime = Time.time;
-                hasDetectedSilence = false;
+                initialVoiceDetected = true; 
             }
-            // 一定時間音声がない場合は録音停止
-            else if (!hasDetectedSilence && Time.time - lastVoiceDetectedTime > silenceDetectionTime)
+            else if (initialVoiceDetected && (Time.time - lastVoiceDetectedTime > silenceDetectionTime))
             {
-                Debug.Log("無音を検出: 録音を停止します");
-                hasDetectedSilence = true;
+                Debug.Log("ButtonScript: 一定時間無音を検出。録音を停止します。");
                 StopRecording();
-                break;
+                yield break;
             }
-            
             yield return null;
         }
     }
     
-    // 録音停止処理
     void StopRecording()
     {
-        if (isRecording)
+        if (!isRecording && !Microphone.IsRecording(microphone)) return; 
+
+        if (Microphone.IsRecording(microphone)) 
         {
-            isRecording = false;
-            Debug.Log("録音を停止し、WAVファイルに保存します。");
-            
-            // 録音停止
             Microphone.End(microphone);
-            
-            // WAVファイルとして保存
-            SaveWavFile(audioFilePath, microphoneInput);
-            json.text = "自動録音完了 - 解析開始";
-            
-            // APIリクエスト開始
-            StartCoroutine(ReadApiKeyAndPostRequest());
-            
-            // 自動録音モードが有効なら、また音声検出を開始
-            if (isAutoRecordEnabled)
+            Debug.Log("ButtonScript: 録音を停止しました。");
+        }
+
+        if (isRecording) 
+        {
+             isRecording = false; 
+            if (microphoneInput != null) 
             {
-                StartListeningForVoice();
+                SaveWavFile(audioFilePath, microphoneInput);
+                Debug.Log("ButtonScript: 自動録音完了 - 解析開始");
+                StartCoroutine(ReadApiKeyAndPostRequest());
+            } else {
+                Debug.LogError("ButtonScript: microphoneInputがnullのため、WAV保存とAPIリクエストをスキップします。");
             }
+        }
+        
+        if (isAutoRecordEnabled)
+        {
+            StartListeningForVoice(); 
         }
     }
 
@@ -349,63 +331,67 @@ public class ButtonScript : MonoBehaviour
         SceneManager.LoadScene("SettingsScene");
     }
 
-    // APIキーを読み込む
     private string LoadApiKey()
     {
         string apiKey = "";
+        string keyPath = Path.Combine(Application.persistentDataPath, "apikey.txt");
         try
         {
-            string apiKeyFilePath = Path.Combine(Application.persistentDataPath, "apikey.txt");
-            if (File.Exists(apiKeyFilePath))
+            if (File.Exists(keyPath))
             {
-                apiKey = File.ReadAllText(apiKeyFilePath).Trim();
-                Debug.Log("保存されたAPIキーを読み込みました");
+                apiKey = File.ReadAllText(keyPath).Trim();
+                Debug.Log("ButtonScript: 保存されたAPIキーを読み込みました。");
             }
             else
             {
-                Debug.LogError("APIキーファイルが見つかりません: " + apiKeyFilePath);
-                json.text = "ERROR: APIキーが設定されていません。設定画面で設定してください。";
+                Debug.LogError("ButtonScript: APIキーファイルが見つかりません: " + keyPath);
             }
         }
         catch (Exception e)
         {
-            Debug.LogError("APIキーの読み込みに失敗: " + e.Message);
+            Debug.LogError("ButtonScript: APIキーの読み込み失敗: " + e.Message);
         }
         return apiKey;
     }
 
     IEnumerator ReadApiKeyAndPostRequest()
     {
-        json.text = "Post Requesting...";
-        
-        // APIキーをファイルから読み込む
+        Debug.Log("ButtonScript: APIリクエスト準備中...");
         string apiKey = LoadApiKey();
         
-        // APIキーが読み込めなかった場合
         if (string.IsNullOrEmpty(apiKey))
         {
-            json.text = "ERROR: APIキーが設定されていません。設定画面で設定してください。";
-            Debug.LogError("APIキーが設定されていません");
+            Debug.LogError("ButtonScript: APIキーが空のためリクエスト中止。");
             yield break;
         }
         
-        // リクエスト送信
+        if (!File.Exists(audioFilePath)) {
+            Debug.LogError($"ButtonScript: 音声ファイルが見つかりません: {audioFilePath}");
+            yield break;
+        }
+
         yield return StartCoroutine(PostRequest(apiKey));
     }
 
     IEnumerator PostRequest(string apiKey)
     {
-        // マルチパートフォームデータの作成
+        Debug.Log("ButtonScript: APIへリクエスト送信中...");
         List<IMultipartFormSection> form = new List<IMultipartFormSection>
         {
             new MultipartFormDataSection("u", apiKey),
             new MultipartFormDataSection("d", "grammarFileNames=-a-general loggingOptOut=True sentimentAnalysis=True"),
-            new MultipartFormDataSection("c", "LSB44K")
+            new MultipartFormDataSection("c", "LSB44K") 
         };
 
-        // 音声ファイルの読み込み
-        byte[] audioData = File.ReadAllBytes(audioFilePath);
-        form.Add(new MultipartFormFileSection("a", audioData, "test.wav", "audio/wav"));
+        byte[] audioData;
+        try {
+            audioData = File.ReadAllBytes(audioFilePath);
+        } catch (Exception e) {
+            Debug.LogError($"ButtonScript: 音声ファイルの読み込みに失敗: {audioFilePath}, Error: {e.Message}");
+            yield break;
+        }
+        
+        form.Add(new MultipartFormFileSection("a", audioData, Path.GetFileName(audioFilePath), "audio/wav"));
 
         using (UnityWebRequest request = UnityWebRequest.Post(apiUrl, form))
         {
@@ -413,31 +399,45 @@ public class ButtonScript : MonoBehaviour
 
             if (request.result == UnityWebRequest.Result.Success)
             {
-                Debug.Log("リクエスト成功: " + request.downloadHandler.text);
-                Save(request.downloadHandler.text);
+                Debug.Log("ButtonScript: APIリクエスト成功: " + request.downloadHandler.text);
+                Save(request.downloadHandler.text); 
 
-                // sessionID取得（レスポンスからパース）
-                var response = JsonUtility.FromJson<RecognitionResponse>(request.downloadHandler.text);
-                sessionID = response.sessionid;
-                Debug.Log("sessionID: " + sessionID);
+                RecognitionResponse recogResponse = null;
+                try {
+                    recogResponse = JsonUtility.FromJson<RecognitionResponse>(request.downloadHandler.text);
+                } catch (Exception e) {
+                    Debug.LogError("ButtonScript: RecognitionResponseのJSONパース失敗: " + e.Message);
+                    yield break;
+                }
 
-                // セッションの結果をポーリング
-                StartCoroutine(PollJobStatus(apiKey));
+                if (recogResponse != null && !string.IsNullOrEmpty(recogResponse.sessionid)) {
+                    sessionID = recogResponse.sessionid;
+                    Debug.Log("ButtonScript: sessionID: " + sessionID);
+                    StartCoroutine(PollJobStatus(apiKey));
+                } else {
+                     Debug.LogError("ButtonScript: sessionIDの取得に失敗しました。レスポンス: " + request.downloadHandler.text);
+                }
             }
             else
             {
-                Debug.LogError("リクエスト失敗: " + request.error);
-                json.text = "ERROR: Post Request failed";
+                Debug.LogError($"ButtonScript: APIリクエスト失敗: {request.error}, Code: {request.responseCode}, Body: {request.downloadHandler?.text}");
             }
         }
     }
 
     IEnumerator PollJobStatus(string apiKey)
     {
-        json.text = "Poll Job";
+        if (string.IsNullOrEmpty(sessionID)) {
+            Debug.LogError("ButtonScript: PollJobStatus - sessionIDが空です。");
+            yield break;
+        }
 
+        Debug.Log("ButtonScript: 解析結果待機中...");
         string pollUrl = $"https://acp-api-async.amivoice.com/v1/recognitions/{sessionID}";
-        while (true)
+        int pollCount = 0; // ポーリング回数カウンターを再導入
+        int maxPolls = 100; // ポーリング回数の上限を100回に設定
+
+        while (pollCount < maxPolls) // ループ条件を修正
         {
             using (UnityWebRequest request = UnityWebRequest.Get(pollUrl))
             {
@@ -446,221 +446,224 @@ public class ButtonScript : MonoBehaviour
 
                 if (request.result == UnityWebRequest.Result.Success)
                 {
-                    SentimentAnalysisResponse response = JsonUtility.FromJson<SentimentAnalysisResponse>(request.downloadHandler.text);
-                    Debug.Log("ジョブ状態: " + response.status);
-                    if (response.status == "completed")
+                    SentimentAnalysisResponse sentimentResponse = null;
+                    try {
+                        sentimentResponse = JsonUtility.FromJson<SentimentAnalysisResponse>(request.downloadHandler.text);
+                    } catch (Exception e) {
+                        Debug.LogError("ButtonScript: SentimentAnalysisResponseのJSONパース失敗: " + e.Message + "\nResponse: " + request.downloadHandler.text);
+                        yield break;
+                    }
+                    
+                    if (sentimentResponse == null) {
+                        Debug.LogError("ButtonScript: SentimentAnalysisResponseがnullです。パース失敗の可能性。");
+                        yield break;
+                    }
+
+                    Debug.Log("ButtonScript: ジョブ状態: " + sentimentResponse.status);
+                    if (sentimentResponse.status == "completed")
                     {
-                        json.text = "Poll Job waiting... 3/3";
-                        Debug.Log("音声認識完了！");
+                        Debug.Log("ButtonScript: 音声認識・感情分析完了！");
+                        Save(request.downloadHandler.text); 
 
                         if (gameController != null)
                         {
                             gameController.SetParametersFromJson(request.downloadHandler.text);
-                            Debug.Log("感情パラメータをGameControllerに送信しました");
+                            Debug.Log("ButtonScript: 感情パラメータをGameControllerに送信しました。");
                         }
-                        else
-                        {
-                            Debug.LogError("GameControllerが見つかりません！");
-                        }
+                        else Debug.LogError("ButtonScript: GameControllerが見つかりません！");
 
                         StringBuilder sb = new StringBuilder();
-                        if (response != null && response.segments != null)
+                        if (sentimentResponse.segments != null) 
                         {
-                            foreach (Segment seg in response.segments)
+                            foreach (Segment segText in sentimentResponse.segments)
                             {
-                                foreach (Result res in seg.results)
-                                {
-                                    foreach (Token tok in res.tokens)
+                                if(segText.results != null) {
+                                    foreach (Result res in segText.results)
                                     {
-                                        if (tok.written.Equals("。"))
-                                        {
-                                            sb.Append(tok.written).Append("\n");
+                                        if(res.tokens != null) {
+                                            foreach (Token tok in res.tokens)
+                                            {
+                                                sb.Append(tok.written);
+                                                if (!tok.written.Equals("。") && !tok.written.Equals("、")) { 
+                                                    sb.Append(" ");
+                                                }
+                                            }
                                         }
-                                        else
-                                        {
-                                            sb.Append(tok.written).Append(" ");
-                                        }
+                                        sb.Append("\n"); 
                                     }
+                                } else if (!string.IsNullOrEmpty(segText.text)){ 
+                                     sb.Append(segText.text).Append("\n");
                                 }
                             }
+                        } else if (!string.IsNullOrEmpty(sentimentResponse.text)) { 
+                            sb.Append(sentimentResponse.text);
                         }
+                        
+                        Debug.Log($"ButtonScript: 認識結果テキスト:\n{sb.ToString().Trim()}");
 
-                        if (jsontext != null)
+                        if (sentimentResponse.sentiment_analysis != null && sentimentResponse.sentiment_analysis.segments != null)
                         {
-                            jsontext.text = sb.ToString();
+                            SentimentSegment sumSegments = new SentimentSegment(); 
+                            int cnt = 0;
+                            foreach (SentimentSegment segSA in sentimentResponse.sentiment_analysis.segments) 
+                            {
+                                sumSegments.energy += segSA.energy;
+                                sumSegments.content += segSA.content;
+                                sumSegments.upset += segSA.upset;
+                                sumSegments.aggression += segSA.aggression;
+                                sumSegments.stress += segSA.stress;
+                                sumSegments.uncertainty += segSA.uncertainty;
+                                sumSegments.excitement += segSA.excitement;
+                                sumSegments.concentration += segSA.concentration;
+                                sumSegments.emo_cog += segSA.emo_cog;
+                                sumSegments.hesitation += segSA.hesitation;
+                                sumSegments.brain_power += segSA.brain_power;
+                                sumSegments.embarrassment += segSA.embarrassment;
+                                sumSegments.intensive_thinking += segSA.intensive_thinking;
+                                sumSegments.imagination_activity += segSA.imagination_activity;
+                                sumSegments.extreme_emotion += segSA.extreme_emotion;
+                                sumSegments.passionate += segSA.passionate;
+                                sumSegments.atmosphere += segSA.atmosphere;
+                                sumSegments.anticipation += segSA.anticipation;
+                                sumSegments.dissatisfaction += segSA.dissatisfaction;
+                                sumSegments.confidence += segSA.confidence;
+                                cnt++;
+                            }
+                            if (cnt > 0) Ave(sumSegments, cnt); 
+                            else Debug.LogWarning("ButtonScript: 感情分析セグメント数が0でした。");
+                        } else {
+                             Debug.LogWarning("ButtonScript: sentiment_analysis またはそのsegmentsがnullです。");
                         }
-                        else
-                        {
-                            Debug.LogError("jsontext が null です！");
-                            json.text = "ERROR: jsontext is null!";
-                        }
-
-                        SentimentSegment sumSegments = new SentimentSegment();
-                        int cnt = 0;
-                        foreach (SentimentSegment seg in response.sentiment_analysis.segments)
-                        {
-                            sumSegments.energy += seg.energy;
-                            sumSegments.content += seg.content;
-                            sumSegments.upset += seg.upset;
-                            sumSegments.aggression += seg.aggression;
-                            sumSegments.stress += seg.stress;
-                            sumSegments.uncertainty += seg.uncertainty;
-                            sumSegments.excitement += seg.excitement;
-                            sumSegments.concentration += seg.concentration;
-                            sumSegments.emo_cog += seg.emo_cog;
-                            sumSegments.hesitation += seg.hesitation;
-                            sumSegments.brain_power += seg.brain_power;
-                            sumSegments.embarrassment += seg.embarrassment;
-                            sumSegments.intensive_thinking += seg.intensive_thinking;
-                            sumSegments.imagination_activity += seg.imagination_activity;
-                            sumSegments.extreme_emotion += seg.extreme_emotion;
-                            sumSegments.passionate += seg.passionate;
-                            sumSegments.atmosphere += seg.atmosphere;
-                            sumSegments.anticipation += seg.anticipation;
-                            sumSegments.dissatisfaction += seg.dissatisfaction;
-                            sumSegments.confidence += seg.confidence;
-                            cnt++;
-                        }
-                        Ave(sumSegments, cnt);
-                        Save(request.downloadHandler.text);
-                        break;
+                        yield break; 
+                    }
+                    else if (sentimentResponse.status == "error")
+                    {
+                        Debug.LogError($"ButtonScript: ジョブエラー: {sentimentResponse.message} (Code: {sentimentResponse.code})");
+                        yield break;
                     }
                     else
                     {
-                        if (response.status == "started")
-                        {
-                            json.text = "Poll Job waiting... 1/3";
-                        }
-                        else if (response.status == "processing")
-                        {
-                            json.text = "Poll Job waiting... 2/3";
-                        }
-                        else if (response.status == "error")
-                        {
-                            json.text = "ERROR: Poll Job failed";
-                            break;
-                        }
-                        else
-                        {
-                            json.text = "Poll Job waiting...";
-                        }
+                        Debug.Log($"ButtonScript: 解析中... (ステータス: {sentimentResponse.status}, ポーリング: {pollCount + 1}/{maxPolls})");
                     }
                 }
                 else
                 {
-                    Debug.LogError("ポーリング失敗: " + request.error);
-                    json.text = "ERROR: Poll Job failed";
-                    break;
+                    Debug.LogError($"ButtonScript: ポーリング失敗: {request.error}, Code: {request.responseCode}, Body: {request.downloadHandler?.text}");
+                    yield break;
                 }
             }
+            pollCount++; // カウンターをインクリメント
+            yield return new WaitForSeconds(4f); 
+        }
 
-            yield return new WaitForSeconds(4f);
-            json.text = "Poll Job waiting";
-            yield return new WaitForSeconds(1f);
+        // ループ終了後（maxPollsに達した場合）のタイムアウト処理
+        if (pollCount >= maxPolls) {
+            Debug.LogWarning("ButtonScript: 最大ポーリング回数(100回)に達しました。タイムアウトと見なします。");
         }
     }
 
     IEnumerator StartRec()
     {
-        yield return null;
-
-        string tmp = recSec.GetComponent<Text>().text;
-        Debug.Log(tmp);
-
-        if (RECORD_LENGTH_SEC == 0)
-        {
-            Debug.Log("ERROR: null record sec");
-            json.text = "ERROR: null record sec";
+        if (microphone == null) {
+            Debug.LogError("ButtonScript: マイクが利用できないため録音を開始できません。");
             yield break;
         }
 
-        try
+        if (RECORD_LENGTH_SEC <= 0)
         {
-            int parsedLength = int.Parse(tmp);
-            if (parsedLength > 0)
-            {
-                RECORD_LENGTH_SEC = parsedLength;
-                microphoneInput = Microphone.Start(microphone, false, RECORD_LENGTH_SEC, SAMPLE_RATE);
-                Debug.Log("録音を開始します。何か話してください。");
-                json.text = "START Recording for " + RECORD_LENGTH_SEC + " sec!";
-                StartCoroutine(WaitAndExecute());
-            }
-            else
-            {
-                Debug.Log("error: RECORD_LENGTH_SEC");
-                json.text = "ERROR: 録音時間は1秒以上に設定してください";
-            }
-        }
-        catch (Exception e)
-        {
-            Debug.Log(e);
-            json.text = "ERROR: 録音秒数の解析に失敗しました";
+            Debug.LogError("ButtonScript: 録音時間が0以下のため録音を開始できません。設定を確認してください。 RECORD_LENGTH_SEC: " + RECORD_LENGTH_SEC);
             yield break;
         }
+
+        microphoneInput = Microphone.Start(microphone, false, RECORD_LENGTH_SEC, SAMPLE_RATE);
+        if (microphoneInput == null) {
+            Debug.LogError("ButtonScript: マイクの起動に失敗しました (手動録音用)。");
+            yield break;
+        }
+
+        Debug.Log("ButtonScript: 手動録音を開始します (" + RECORD_LENGTH_SEC + "秒間)");
+        StartCoroutine(WaitAndExecuteRecording()); 
     }
 
-    IEnumerator WaitAndExecute()
+    IEnumerator WaitAndExecuteRecording()
     {
         yield return new WaitForSeconds(RECORD_LENGTH_SEC);
-        Debug.Log("録音を終了し、WAVファイルに保存します。");
+        
+        if (Microphone.IsRecording(microphone)) 
+        {
+            Microphone.End(microphone);
+        }
+        Debug.Log("ButtonScript: 手動録音を終了し、WAVファイルに保存します。");
 
-        var filePath = string.Format("{0}", audioFilePath);
-        Debug.Log("filePath: " + filePath);
-
-        SaveWavFile(filePath, microphoneInput);
-        json.text = "RECORDING END";
+        if (microphoneInput != null) {
+            SaveWavFile(audioFilePath, microphoneInput);
+            if (File.Exists(audioFilePath)) { 
+                Debug.Log("ButtonScript: 録音完了 - 解析開始");
+                StartCoroutine(ReadApiKeyAndPostRequest()); 
+            } else {
+                Debug.LogError($"ButtonScript: 保存されたWAVファイルが見つかりません: {audioFilePath}。APIリクエストを中止します。");
+            }
+        } else {
+            Debug.LogError("ButtonScript: microphoneInputがnullのため、手動録音のWAV保存とAPIリクエストをスキップします。");
+        }
     }
 
     private void SaveWavFile(string filepath, AudioClip clip)
     {
-        // WavUtilityのスクリプトが必要です
-        byte[] wavBytes = WavUtility.FromAudioClip(clip, filepath, true);
+        if (clip == null) {
+            Debug.LogError("ButtonScript: SaveWavFile - AudioClipがnullです。");
+            return;
+        }
+        try
+        {
+            Debug.Log($"ButtonScript: WAVファイルを保存中: {filepath}");
+            byte[] wavBytes = WavUtility.FromAudioClip(clip, filepath, true);
+            if (wavBytes == null || wavBytes.Length == 0) {
+                Debug.LogError("ButtonScript: WAVファイルの生成に失敗しました。");
+            } else {
+                 if (!File.Exists(filepath))
+                {
+                     Debug.LogError($"ButtonScript: WAVファイルの保存に失敗したようです。ファイルが存在しません: {filepath}");
+                } else {
+                     Debug.Log($"ButtonScript: WAVファイル保存完了 ({wavBytes.Length} bytes) at {filepath}");
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"ButtonScript: SaveWavFileで例外発生: {e.Message}\n{e.StackTrace}");
+        }
     }
 
-    void Ave(SentimentSegment res, int cnt)
+    void Ave(SentimentSegment sumRes, int count) 
     {
-        Debug.Log("Ave values below");
-        Debug.Log("エネルギー: " + (double)res.energy / cnt);
-        Debug.Log("よろこび: " + (double)res.content / cnt);
-        Debug.Log("動揺: " + (double)res.upset / cnt);
-        Debug.Log("攻撃性 憤り: " + (double)res.aggression / cnt);
-        Debug.Log("ストレス: " + (double)res.stress / cnt);
-        Debug.Log("不確実性: " + (double)res.uncertainty / cnt);
-        Debug.Log("興奮: " + (double)res.excitement / cnt);
-        Debug.Log("集中: " + (double)res.concentration / cnt);
-        Debug.Log("感情バランス論理: " + (double)res.emo_cog / cnt);
-        Debug.Log("ためらい(躊躇): " + (double)res.hesitation / cnt);
-        Debug.Log("脳活動: " + (double)res.brain_power / cnt);
-        Debug.Log("困惑: " + (double)res.embarrassment / cnt);
-        Debug.Log("思考: " + (double)res.intensive_thinking / cnt);
-        Debug.Log("想像力: " + (double)res.imagination_activity / cnt);
-        Debug.Log("極端な起伏(感情): " + (double)res.extreme_emotion / cnt);
-        Debug.Log("情熱: " + (double)res.passionate / cnt);
-        Debug.Log("雰囲気: " + (double)res.atmosphere / cnt);
-        Debug.Log("期待: " + (double)res.anticipation / cnt);
-        Debug.Log("不満: " + (double)res.dissatisfaction / cnt);
-        Debug.Log("自信: " + (double)res.confidence / cnt);
+        if (count == 0)
+        {
+            Debug.LogWarning("ButtonScript: Ave - countが0のため平均計算をスキップします。");
+            return;
+        }
 
-        json.text = "エネルギー: " + Calc(res.energy, cnt) + "\n" +
-                    "よろこび: " + Calc(res.content, cnt) + "\n" +
-                    "動揺: " + Calc(res.upset, cnt) + "\n" +
-                    "攻撃性 憤り: " + Calc(res.aggression, cnt) + "\n" +
-                    "ストレス: " + Calc(res.stress, cnt) + "\n" +
-                    "不確実性: " + Calc(res.uncertainty, cnt) + "\n" +
-                    "興奮: " + Calc(res.excitement, cnt) + "\n" +
-                    "集中: " + Calc(res.concentration, cnt) + "\n" +
-                    "感情バランス論理: " + Calc(res.emo_cog, cnt) + "\n" +
-                    "ためらい(躊躇): " + Calc(res.hesitation, cnt) + "\n" +
-                    "脳活動: " + Calc(res.brain_power, cnt) + "\n" +
-                    "困惑: " + Calc(res.embarrassment, cnt) + "\n" +
-                    "思考: " + Calc(res.intensive_thinking, cnt) + "\n" +
-                    "想像力: " + Calc(res.imagination_activity, cnt) + "\n" +
-                    "極端な起伏(感情): " + Calc(res.extreme_emotion, cnt) + "\n" +
-                    "情熱: " + Calc(res.passionate, cnt) + "\n" +
-                    "雰囲気: " + Calc(res.atmosphere, cnt) + "\n" +
-                    "期待: " + Calc(res.anticipation, cnt) + "\n" +
-                    "不満: " + Calc(res.dissatisfaction, cnt) + "\n" +
-                    "自信: " + Calc(res.confidence, cnt);
+        Debug.Log("ButtonScript: 平均感情値:");
+        Debug.Log($"エネルギー: {Calc(sumRes.energy, count):F2}");
+        Debug.Log($"よろこび: {Calc(sumRes.content, count):F2}");
+        Debug.Log($"動揺: {Calc(sumRes.upset, count):F2}");
+        Debug.Log($"攻撃性: {Calc(sumRes.aggression, count):F2}");
+        Debug.Log($"ストレス: {Calc(sumRes.stress, count):F2}");
+        Debug.Log($"不確実性: {Calc(sumRes.uncertainty, count):F2}");
+        Debug.Log($"興奮: {Calc(sumRes.excitement, count):F2}");
+        Debug.Log($"集中: {Calc(sumRes.concentration, count):F2}");
+        Debug.Log($"感情バランス: {Calc(sumRes.emo_cog, count):F2}");
+        Debug.Log($"ためらい: {Calc(sumRes.hesitation, count):F2}");
+        Debug.Log($"脳活動: {Calc(sumRes.brain_power, count):F2}");
+        Debug.Log($"困惑: {Calc(sumRes.embarrassment, count):F2}");
+        Debug.Log($"思考: {Calc(sumRes.intensive_thinking, count):F2}");
+        Debug.Log($"想像力: {Calc(sumRes.imagination_activity, count):F2}");
+        Debug.Log($"極端な起伏: {Calc(sumRes.extreme_emotion, count):F2}");
+        Debug.Log($"情熱: {Calc(sumRes.passionate, count):F2}");
+        Debug.Log($"雰囲気: {Calc(sumRes.atmosphere, count):F2}");
+        Debug.Log($"期待: {Calc(sumRes.anticipation, count):F2}");
+        Debug.Log($"不満: {Calc(sumRes.dissatisfaction, count):F2}");
+        Debug.Log($"自信: {Calc(sumRes.confidence, count):F2}");
     }
 
     void Save(string data)
@@ -668,52 +671,48 @@ public class ButtonScript : MonoBehaviour
         try
         {
             string filePath = Path.Combine(Application.persistentDataPath, "log.txt");
-            File.WriteAllText(filePath, data);
-            Debug.Log("ログデータを保存しました: " + filePath);
+            File.WriteAllText(filePath, data); 
+            Debug.Log("ButtonScript: ログデータを保存しました: " + filePath);
         }
         catch (Exception e)
         {
-            Debug.LogError("ログデータの保存に失敗: " + e.Message);
+            Debug.LogError("ButtonScript: ログデータの保存に失敗: " + e.Message);
         }
     }
 
-    float Calc(int num, int div)
+    float Calc(int num, int div) 
     {
+        if (div == 0) return 0f;
         return (float)num / div;
     }
     
-    // アプリケーション終了時にリソースを解放
     void OnDestroy()
     {
-        // 全てのコルーチンを停止
         StopAllCoroutines();
-        
-        // マイクリソースの解放
-        StopListeningForVoice();
-        if (isRecording)
-        {
-            Microphone.End(microphone);
-        }
-    }
-
-    // アプリケーションの一時停止時にも対応
-    void OnApplicationPause(bool pauseStatus)
-    {
-        if (pauseStatus)
-        {
-            // アプリが一時停止したらマイクを停止
-            if (Microphone.IsRecording(microphone))
+        if (microphone != null) { 
+            if (isListeningForVoice && Microphone.IsRecording(microphone))
+            {
+                Microphone.End(microphone);
+            }
+            if (isRecording && Microphone.IsRecording(microphone))
             {
                 Microphone.End(microphone);
             }
         }
+    }
+
+    void OnApplicationPause(bool pauseStatus)
+    {
+        if (pauseStatus)
+        {
+            if (microphone != null && Microphone.IsRecording(microphone))
+            {
+                Debug.Log("ButtonScript: アプリケーション一時停止。マイクの状態を確認してください。");
+            }
+        }
         else
         {
-            // アプリが再開したら必要に応じてマイクを再開
-            if (isAutoRecordEnabled && !isRecording && !isListeningForVoice)
-            {
-                StartListeningForVoice();
-            }
+            Debug.Log("ButtonScript: アプリケーション再開。");
         }
     }
 }

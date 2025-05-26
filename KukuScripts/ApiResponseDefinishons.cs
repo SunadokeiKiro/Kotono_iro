@@ -33,7 +33,7 @@ public class Segment {
 [Serializable]
 public class Result {
     public List<Token> tokens;
-    public float confidence;
+    public float confidence; // この confidence は float のままが適切と思われます
     public int starttime;
     public int endtime;
     public List<string> tags;
@@ -44,7 +44,7 @@ public class Result {
 [Serializable]
 public class Token {
     public string written;
-    public float confidence;
+    public float confidence; // この confidence も float のままが適切と思われます
     public int starttime;
     public int endtime;
     public string spoken;
@@ -59,26 +59,26 @@ public class SentimentAnalysis {
 public class SentimentSegment {
     public int starttime;
     public int endtime;
-    public int energy;
-    public int content;
-    public int upset;
-    public int aggression;
-    public int stress;
-    public int uncertainty;
-    public int excitement; //使う 興奮
-    public int concentration;
-    public int emo_cog;
-    public int hesitation; //使う ためらい
-    public int brain_power;
-    public int embarrassment;
-    public int intensive_thinking;
-    public int imagination_activity;
-    public int extreme_emotion;
-    public int passionate;
-    public int atmosphere; //使う 雰囲気会話傾向
-    public int anticipation; //使う 期待
-    public int dissatisfaction; //使う 不満
-    public int confidence;
+    public int energy; // float から int に変更
+    public int content; // float から int に変更
+    public int upset; // float から int に変更
+    public int aggression; // float から int に変更
+    public int stress; // float から int に変更
+    public int uncertainty; // float から int に変更
+    public int excitement; // float から int に変更
+    public int concentration; // float から int に変更
+    public int emo_cog; // float から int に変更
+    public int hesitation; // float から int に変更
+    public int brain_power; // float から int に変更
+    public int embarrassment; // float から int に変更
+    public int intensive_thinking; // float から int に変更
+    public int imagination_activity; // float から int に変更
+    public int extreme_emotion; // float から int に変更
+    public int passionate; // float から int に変更
+    public int atmosphere; // float から int に変更
+    public int anticipation; // float から int に変更
+    public int dissatisfaction; // float から int に変更
+    public int confidence; // float から int に変更
 }
 
 public class SerializableExample : MonoBehaviour
