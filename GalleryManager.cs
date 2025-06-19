@@ -8,12 +8,12 @@ using TMPro;
 public class GalleryManager : MonoBehaviour
 {
     [Header("UI References")]
-    public GameObject[] slotElements = new GameObject[3]; // 各スロットの親UI要素 (Panelなど)
-    public Image[] slotThumbnailImages = new Image[3];    // 各スロットのサムネイル表示用Image
-    public TextMeshProUGUI[] slotInfoTexts = new TextMeshProUGUI[3]; // 各スロットの情報表示用Text
+    public GameObject[] slotElements = new GameObject[3]; 
+    public Image[] slotThumbnailImages = new Image[3];    
+    public TextMeshProUGUI[] slotInfoTexts = new TextMeshProUGUI[3]; 
     public Button loadSelectedButton;
     public Button backToMainButton;
-    public TextMeshProUGUI statusText; // 状態表示用 (例: "スロットXを選択中")
+    public TextMeshProUGUI statusText; 
 
     private const string saveFileBaseName = "glass_art_slot_";
     private const string saveFileExtension = ".json";
@@ -30,7 +30,7 @@ public class GalleryManager : MonoBehaviour
         }
         if (backToMainButton != null)
         {
-            backToMainButton.onClick.AddListener(() => SceneManager.LoadScene("KotonoGem")); // メインシーン名
+            backToMainButton.onClick.AddListener(() => SceneManager.LoadScene("KotonoGem")); 
         }
         if (statusText != null) statusText.text = "ロードする作品を選んでください";
 
@@ -49,68 +49,54 @@ public class GalleryManager : MonoBehaviour
             Button slotButton = slotElements[i].GetComponent<Button>();
             if (slotButton == null) slotButton = slotElements[i].AddComponent<Button>();
             
-            int slotIndex = i; // クロージャ用
-            slotButton.onClick.RemoveAllListeners(); // 既存リスナーをクリア
+            int slotIndex = i; 
+            slotButton.onClick.RemoveAllListeners(); 
             slotButton.onClick.AddListener(() => SelectSlot(slotIndex));
 
             if (File.Exists(jsonFilePath))
             {
                 slotElements[i].SetActive(true);
-                // サムネイル表示
                 if (slotThumbnailImages[i] != null)
                 {
                     if (File.Exists(thumbnailPath))
                     {
                         byte[] fileData = File.ReadAllBytes(thumbnailPath);
-                        Texture2D tex = new Texture2D(2, 2); // サイズはLoadImageで自動調整される
-                        if (tex.LoadImage(fileData)) // 必ずtrueかチェック
+                        Texture2D tex = new Texture2D(2, 2); 
+                        if (tex.LoadImage(fileData)) 
                         {
                             slotThumbnailImages[i].sprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f));
-                            slotThumbnailImages[i].color = Color.white; // 画像があるので不透明に
+                            slotThumbnailImages[i].color = Color.white; 
                             slotThumbnailImages[i].gameObject.SetActive(true);
                         }
                         else
                         {
                             Debug.LogError($"サムネイルのロードに失敗: {thumbnailPath}");
-                            slotThumbnailImages[i].sprite = null; // またはデフォルト画像
-                            slotThumbnailImages[i].color = new Color(0.5f,0.5f,0.5f,0.5f); // 半透明グレーなど
+                            slotThumbnailImages[i].sprite = null; 
+                            slotThumbnailImages[i].color = new Color(0.5f,0.5f,0.5f,0.5f); 
                         }
                     }
                     else
                     {
                         Debug.LogWarning($"サムネイルファイルが見つかりません: {thumbnailPath}");
-                        slotThumbnailImages[i].sprite = null; // または「No Image」のようなSprite
-                        slotThumbnailImages[i].color = new Color(0.8f,0.8f,0.8f,0.5f); // 薄い色
+                        slotThumbnailImages[i].sprite = null; 
+                        slotThumbnailImages[i].color = new Color(0.8f,0.8f,0.8f,0.5f); 
                     }
                 }
 
-                // 情報テキスト表示 (任意)
                 if (slotInfoTexts[i] != null)
                 {
-                     try {
-                        string jsonData = File.ReadAllText(jsonFilePath);
-                        SceneData sceneData = JsonUtility.FromJson<SceneData>(jsonData);
-                        if (sceneData != null && sceneData.objects != null && sceneData.objects.Count > 0) {
-                            string mainObjectName = sceneData.objects[0].prefabName ?? "名無し";
-                            if(mainObjectName.EndsWith("(Clone)")) mainObjectName = mainObjectName.Replace("(Clone)", "");
-                            slotInfoTexts[i].text = $"スロット {i + 1}\n<size=20>{mainObjectName}</size>"; // 少し小さめに
-                        } else {
-                             slotInfoTexts[i].text = $"スロット {i + 1}\n(データ破損)";
-                        }
-                    } catch {
-                        slotInfoTexts[i].text = $"スロット {i + 1}\n(読込エラー)";
-                    }
+                    // メインオブジェクト名を表示せず、スロット番号のみ表示するように変更
+                    slotInfoTexts[i].text = $"スロット {i + 1}";
                 }
             }
             else
             {
-                // 保存データがないスロット
                 if (slotThumbnailImages[i] != null) {
-                    slotThumbnailImages[i].sprite = null; // または「空」を示すSprite
-                    slotThumbnailImages[i].color = Color.gray; // グレーアウトなど
+                    slotThumbnailImages[i].sprite = null; 
+                    slotThumbnailImages[i].color = Color.gray; 
                 }
                 if (slotInfoTexts[i] != null) slotInfoTexts[i].text = $"スロット {i + 1}\n(空)";
-                slotButton.interactable = false; // 空のスロットは選択不可
+                slotButton.interactable = false; 
             }
         }
     }
@@ -125,10 +111,9 @@ public class GalleryManager : MonoBehaviour
         {
             if (slotElements[i] != null)
             {
-                Image bgImage = slotElements[i].GetComponent<Image>(); // PanelのImageコンポーネントを想定
+                Image bgImage = slotElements[i].GetComponent<Image>(); 
                 if (bgImage != null)
                 {
-                    // 選択状態に応じて背景色や枠線などを変更する（例）
                     bgImage.color = (i == selectedSlot) ? new Color(0.8f, 1f, 0.8f, 1f) : Color.white;
                 }
             }
@@ -141,7 +126,7 @@ public class GalleryManager : MonoBehaviour
         {
             if (GameDataManager.Instance != null)
             {
-                GameDataManager.Instance.SlotToLoadFromGallery = selectedSlot;
+                GameDataManager.Instance.SlotToLoadFromGallery = selectedSlot; //
                 SceneManager.LoadScene("KotonoGem");
             }
             else Debug.LogError("GameDataManager が見つかりません！");

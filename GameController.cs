@@ -342,7 +342,7 @@ public class GameController : MonoBehaviour
             int validGroupCount = 0; foreach(var group in textObjectGroups) if (group != null) validGroupCount++;
             if (validGroupCount > 1) StartCoroutine(CycleTextGroupsCoroutine());
         }
-     }
+       }
     IEnumerator CycleTextGroupsCoroutine() {
         while (true) {
             yield return new WaitForSeconds(textDisplayDuration);
@@ -491,7 +491,7 @@ public class GameController : MonoBehaviour
              sceneData.mainObjectIndex = -1;
         }
         return sceneData;
-     }
+       }
     void SaveModelList(List<GameObject> modelList, string type, GameObject[] prefabs, List<SavedObjectData> objectsList) {
         foreach (GameObject model in modelList) {
             if (model == null) continue;
@@ -509,7 +509,7 @@ public class GameController : MonoBehaviour
             if (modelData.prefabIndex == -1 && prefabs != null && prefabs.Length > 0) Debug.LogWarning($"モデル ({type}) のPrefab名が特定できませんでした: {model.name}");
             objectsList.Add(modelData);
         }
-     }
+       }
 
     bool LoadWorkStateFromSlotFile(int slotIndex)
     {
@@ -580,7 +580,7 @@ public class GameController : MonoBehaviour
              Debug.LogWarning($"メインオブジェクトの復元に失敗しました (Populate)。新規ランダムオブジェクトを作業状態にします。");
              GenerateRandomMainObject(); 
         }
-     }
+       }
     private void ResetAllCurrentWorkData() {
         DeleteAllCurrentModels();
         if (currentMainObject != null) { Destroy(currentMainObject); currentMainObject = null; }
@@ -614,18 +614,33 @@ public class GameController : MonoBehaviour
         UpdateWorkSentimentUI(); 
         SetDefaultModelParametersToCurrentWork(); 
     }
+
+    // ★★★★★ 変更点 1/2 ★★★★★
+    // 初期化時の生成パラメータにもスケール係数を適用します。
     void SetDefaultModelParametersToCurrentWork() {
         currentWorkDerivedJoy = 0.1f; currentWorkDerivedAnger = 0f; currentWorkDerivedSadness = 0.1f; currentWorkDerivedEnjoyment = 0.1f;
         currentWorkDerivedFocus = 0.1f; currentWorkDerivedAnxiety = 0f; currentWorkDerivedConfidence = 0.1f;
-        currentWorkParameterA = currentWorkDerivedJoy; currentWorkParameterB = currentWorkDerivedAnger; currentWorkParameterC = currentWorkDerivedSadness;
-        currentWorkParameterD = currentWorkDerivedEnjoyment; currentWorkParameterE = currentWorkDerivedFocus; currentWorkParameterF = currentWorkDerivedAnxiety;
-        currentWorkParameterG = currentWorkDerivedConfidence;
+
+        // 生成される鉱石の基本スケールを調整するための係数
+        const float scaleMultiplier = 5.0f;
+
+        currentWorkParameterA = currentWorkDerivedJoy * scaleMultiplier; 
+        currentWorkParameterB = currentWorkDerivedAnger * scaleMultiplier; 
+        currentWorkParameterC = currentWorkDerivedSadness * scaleMultiplier;
+        currentWorkParameterD = currentWorkDerivedEnjoyment * scaleMultiplier; 
+        currentWorkParameterE = currentWorkDerivedFocus * scaleMultiplier; 
+        currentWorkParameterF = currentWorkDerivedAnxiety * scaleMultiplier;
+        currentWorkParameterG = currentWorkDerivedConfidence * scaleMultiplier;
+
+        // 拡大倍率(enlargeFactor)の計算は、元の正規化された値(0-1)を使い、変更しない
         currentWorkEnlargeFactorA = 1.0f + currentWorkDerivedJoy * 1.0f; currentWorkEnlargeFactorB = 1.0f + currentWorkDerivedAnger * 1.0f;
         currentWorkEnlargeFactorC = 1.0f + currentWorkDerivedSadness * 1.0f; currentWorkEnlargeFactorD = 1.0f + currentWorkDerivedEnjoyment * 1.0f;
         currentWorkEnlargeFactorE = 1.0f + currentWorkDerivedFocus * 0.5f; currentWorkEnlargeFactorF = 1.0f + currentWorkDerivedAnxiety * 1.0f;
         currentWorkEnlargeFactorG = 1.0f + currentWorkDerivedConfidence * 1.0f;
-     }
+    }
 
+    // ★★★★★ 変更点 2/2 ★★★★★
+    // 感情データからパラメータを計算する箇所にスケール係数を適用します。
     public void SetParametersFromJson(string jsonData)
     {
         bool validDataReceived = false;
@@ -656,8 +671,18 @@ public class GameController : MonoBehaviour
                 currentWorkDerivedAnxiety=Mathf.Clamp01(currentWorkDerivedAnxiety); currentWorkDerivedConfidence=Mathf.Clamp01(currentWorkDerivedConfidence);
                 Debug.Log($"Derived Emotions (Work): Joy={currentWorkDerivedJoy:F2}, Anger={currentWorkDerivedAnger:F2}, Sadness={currentWorkDerivedSadness:F2}, Enjoyment={currentWorkDerivedEnjoyment:F2}, Focus={currentWorkDerivedFocus:F2}, Anxiety={currentWorkDerivedAnxiety:F2}, Confidence={currentWorkDerivedConfidence:F2}");
 
-                currentWorkParameterA=currentWorkDerivedJoy; currentWorkParameterB=currentWorkDerivedAnger; currentWorkParameterC=currentWorkDerivedSadness; currentWorkParameterD=currentWorkDerivedEnjoyment;
-                currentWorkParameterE=currentWorkDerivedFocus; currentWorkParameterF=currentWorkDerivedAnxiety; currentWorkParameterG=currentWorkDerivedConfidence;
+                // 生成される鉱石の基本スケールを調整するための係数
+                const float scaleMultiplier = 2.0f;
+
+                currentWorkParameterA=currentWorkDerivedJoy * scaleMultiplier; 
+                currentWorkParameterB=currentWorkDerivedAnger * scaleMultiplier; 
+                currentWorkParameterC=currentWorkDerivedSadness * scaleMultiplier; 
+                currentWorkParameterD=currentWorkDerivedEnjoyment * scaleMultiplier;
+                currentWorkParameterE=currentWorkDerivedFocus * scaleMultiplier; 
+                currentWorkParameterF=currentWorkDerivedAnxiety * scaleMultiplier; 
+                currentWorkParameterG=currentWorkDerivedConfidence * scaleMultiplier;
+                
+                // 拡大倍率(enlargeFactor)の計算は、元の正規化された値(0-1)を使い、変更しない
                 currentWorkEnlargeFactorA=1.0f+currentWorkDerivedJoy*1.0f; currentWorkEnlargeFactorB=1.0f+currentWorkDerivedAnger*1.0f; currentWorkEnlargeFactorC=1.0f+currentWorkDerivedSadness*1.0f;
                 currentWorkEnlargeFactorD=1.0f+currentWorkDerivedEnjoyment*1.0f; currentWorkEnlargeFactorE=1.0f+currentWorkDerivedFocus*0.5f; currentWorkEnlargeFactorF=1.0f+currentWorkDerivedAnxiety*1.0f;
                 currentWorkEnlargeFactorG=1.0f+currentWorkDerivedConfidence*1.0f;
