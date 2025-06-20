@@ -1,22 +1,31 @@
-using TMPro;
+// Scripts/TimeText.cs
 using UnityEngine;
-using UnityEngine.UI; //Textを使用する為追加。
-using System; //DateTimeを使用する為追加。
+using TMPro; // TextMeshProを使用するために必要
+using System; // DateTimeを使用するために必要
 
-public class Timetext : MonoBehaviour
+/// <summary>
+/// TextMeshProのUIに現在の時刻（時:分:秒）をリアルタイムで表示します。
+/// </summary>
+public class TimeText : MonoBehaviour // クラス名をファイル名と一致させるため "Timetext" -> "TimeText" に変更
 {
-    //テキストUIをドラッグ&ドロップ
-    [SerializeField] TextMeshProUGUI DateTimeText;
+    [Tooltip("時刻を表示するTextMeshProコンポーネント")]
+    [SerializeField] 
+    private TextMeshProUGUI dateTimeText;
 
-    //DateTimeを使うため変数を設定
-    DateTime TodayNow;
+    void Start()
+    {
+        // 参照が設定されていない場合のエラーチェック
+        if (dateTimeText == null)
+        {
+            Debug.LogError("DateTimeText is not assigned in the inspector.", this.gameObject);
+            // 参照がないと動作しないため、このコンポーネントを無効化
+            this.enabled = false;
+        }
+    }
 
     void Update()
     {
-        //時間を取得
-        TodayNow = DateTime.Now;
-
-        //テキストUIに秒を表示させる
-        DateTimeText.text = DateTime.Now.ToLongTimeString();
+        // テキストUIに現在の時刻を長い形式（例: "14:25:30"）で表示
+        dateTimeText.text = DateTime.Now.ToLongTimeString();
     }
 }
