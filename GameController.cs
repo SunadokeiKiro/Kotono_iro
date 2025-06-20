@@ -6,11 +6,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
-// SavedObjectData と SceneData の定義は、元のファイルから変更ありません。
-// 別のファイルに分割することも可能ですが、ここではGameController内に記述します。
+// (SavedObjectData と SceneData の定義は変更なし)
 [System.Serializable]
-public class SavedObjectData
-{
+public class SavedObjectData {
     public string prefabName;
     public Vector3 position;
     public Quaternion rotation;
@@ -18,10 +16,8 @@ public class SavedObjectData
     public string type;
     public int prefabIndex;
 }
-
 [System.Serializable]
-public class SceneData
-{
+public class SceneData {
     public List<SavedObjectData> objects = new List<SavedObjectData>();
     public float parameterA, parameterB, parameterC, parameterD, parameterE, parameterF, parameterG;
     public float enlargeFactorA, enlargeFactorB, enlargeFactorC, enlargeFactorD, enlargeFactorE, enlargeFactorF, enlargeFactorG;
@@ -34,16 +30,18 @@ public class SceneData
 }
 
 /// <summary>
-/// ゲームの主要なロジック、オブジェクトの生成・管理、データの保存・読込を担当します。
-/// UIに関する処理はMainUIManagerに委譲します。
+/// ゲームの主要なロジックを管理します。設定値はConfigアセットから読み込みます。
 /// </summary>
 public class GameController : MonoBehaviour
 {
+    [Header("Configuration Assets")]
+    [SerializeField] private EmotionCalculationConfig emotionConfig; // ★★★ 修正点: 設定アセットへの参照を追加 ★★★
+
     [Header("Manager References")]
     [SerializeField] private MainUIManager mainUIManager;
 
+    // (その他の変数の定義は変更なし)
     #region 変数定義
-    // --- 感情データ ---
     private int currentWorkEnergy = 0;
     private int currentWorkContent = 0;
     private int currentWorkUpset = 0;
@@ -65,7 +63,6 @@ public class GameController : MonoBehaviour
     private int currentWorkDissatisfaction = 0;
     private int currentWorkConfidence = 0;
 
-    // --- ファイル関連定数 ---
     private const string SLOT_FILE_BASE_NAME = "glass_art_slot_";
     private const string CURRENT_WORK_FILE_NAME = "current_work_session";
     private const string SAVE_FILE_EXTENSION = ".json";
@@ -106,7 +103,6 @@ public class GameController : MonoBehaviour
     public float currentWorkEnlargeFactorF = 1.0f;
     public float currentWorkEnlargeFactorG = 1.0f;
     
-    // --- 派生感情 (デバッグ用) ---
     public float currentWorkDerivedJoy = 0f;
     public float currentWorkDerivedAnger = 0f;
     public float currentWorkDerivedSadness = 0f;
@@ -115,7 +111,6 @@ public class GameController : MonoBehaviour
     public float currentWorkDerivedAnxiety = 0f;
     public float currentWorkDerivedConfidence = 0f;
 
-    // --- 内部状態 ---
     private List<GameObject> attachedModelsA = new List<GameObject>();
     private List<GameObject> attachedModelsB = new List<GameObject>();
     private List<GameObject> attachedModelsC = new List<GameObject>();
@@ -126,10 +121,16 @@ public class GameController : MonoBehaviour
 
     private GameObject currentMainObject;
     #endregion
-
-    #region Unityライフサイクル
+    
     void Start()
     {
+        // ★★★ 修正点: emotionConfigの参照をチェック ★★★
+        if (emotionConfig == null)
+        {
+            Debug.LogError("GameController: EmotionCalculationConfig is not set in the inspector!");
+            enabled = false;
+            return;
+        }
         if (mainUIManager == null)
         {
             Debug.LogError("GameController: MainUIManager is not set in the inspector!");
@@ -142,7 +143,9 @@ public class GameController : MonoBehaviour
         
         LoadInitialState();
     }
-
+    
+    // (Update, OnApplicationQuitは変更なし)
+    #region Unityライフサイクル
     void Update()
     {
         RotateMainObject();
@@ -155,16 +158,16 @@ public class GameController : MonoBehaviour
     }
     #endregion
 
+    // (LoadInitialStateは変更なし)
     #region 初期化と状態ロード
     private void LoadInitialState()
     {
         bool loadedState = false;
 
-        // ギャラリーからのロード指示を確認
         if (GameDataManager.Instance != null && GameDataManager.Instance.SlotToLoadFromGallery != -1)
         {
             int slotFromGallery = GameDataManager.Instance.SlotToLoadFromGallery;
-            GameDataManager.Instance.SlotToLoadFromGallery = -1; // 指示を消費
+            GameDataManager.Instance.SlotToLoadFromGallery = -1;
             Debug.Log($"Attempting to load from gallery, slot {slotFromGallery}.");
             if (LoadWorkStateFromSlotFile(slotFromGallery))
             {
@@ -178,7 +181,6 @@ public class GameController : MonoBehaviour
             }
         }
 
-        // ギャラリーからのロードがなかった場合、前回の作業データをロード
         if (!loadedState)
         {
             if (LoadCurrentWorkStateFromFile())
@@ -192,7 +194,6 @@ public class GameController : MonoBehaviour
             }
         }
 
-        // 有効なデータが何もロードできなかった場合、新規作成
         if (!loadedState)
         {
             Debug.Log("No valid save data found. Creating a new object.");
@@ -201,7 +202,6 @@ public class GameController : MonoBehaviour
             SaveCurrentWorkStateToFile();
         }
 
-        // 状態が確定した後、UIの表示を更新するようMainUIManagerに依頼
         if(mainUIManager != null)
         {
             mainUIManager.UpdateWorkSentimentUI(CreateSceneDataFromCurrentWork());
@@ -210,10 +210,8 @@ public class GameController : MonoBehaviour
     }
     #endregion
 
+    // (MainUIManagerから呼び出されるメソッド群は変更なし)
     #region MainUIManagerから呼び出されるメソッド
-    /// <summary>
-    /// 現在の作業状態をリセットし、新しいメインオブジェクトを生成します。
-    /// </summary>
     public void HandleResetAndNewClick()
     {
         Debug.Log("Resetting current work state and generating a new object.");
@@ -223,9 +221,6 @@ public class GameController : MonoBehaviour
         if (mainUIManager != null) mainUIManager.UpdateWorkSentimentUI(CreateSceneDataFromCurrentWork());
     }
 
-    /// <summary>
-    /// 現在のメインオブジェクトを破棄し、新しいランダムなオブジェクトに置き換えます。
-    /// </summary>
     public void GenerateRandomMainObjectAndSaveToCurrentWork()
     {
         Debug.Log("Replacing current work object with a new random one.");
@@ -240,18 +235,12 @@ public class GameController : MonoBehaviour
         if (mainUIManager != null) mainUIManager.UpdateWorkSentimentUI(CreateSceneDataFromCurrentWork());
     }
 
-    /// <summary>
-    /// 設定シーンに遷移します。
-    /// </summary>
     public void MoveToSettings()
     {
         Debug.Log("Moving to Settings scene.");
         SceneManager.LoadScene("SettingsScene");
     }
 
-    /// <summary>
-    /// 現在の作業状態を指定されたスロット番号に保存します。
-    /// </summary>
     public void SaveCurrentWorkToDesignatedSlot(int slotIndex)
     {
         if (currentMainObject == null)
@@ -279,11 +268,52 @@ public class GameController : MonoBehaviour
         }
     }
     #endregion
+
+    private void CalculateDerivedEmotions()
+    {
+        currentWorkDerivedJoy = ((float)currentWorkContent + (float)currentWorkExcitement + (float)currentWorkPassionate + Mathf.Max(0, currentWorkAtmosphere) + (float)currentWorkAnticipation) / emotionConfig.joyDivisor;
+        currentWorkDerivedAnger = ((float)currentWorkAggression + (float)currentWorkUpset + (float)currentWorkStress + (float)currentWorkExtremeEmotion) / emotionConfig.angerDivisor;
+        currentWorkDerivedSadness = ((float)currentWorkDissatisfaction + Mathf.Max(0, -currentWorkAtmosphere) + (float)currentWorkUncertainty + (100.0f - (float)currentWorkEnergy) / emotionConfig.sadnessFromEnergyDivisor) / emotionConfig.sadnessDivisor;
+        currentWorkDerivedEnjoyment = ((float)currentWorkExcitement + (float)currentWorkAnticipation + (float)currentWorkImaginationActivity + (float)currentWorkEnergy) / emotionConfig.enjoymentDivisor;
+        float logicalScore = Mathf.Max(0, currentWorkEmoCog - emotionConfig.emoCogBaseline);
+        currentWorkDerivedFocus = ((float)currentWorkConcentration + (float)currentWorkIntensiveThinking + (float)currentWorkBrainPower + logicalScore) / emotionConfig.focusDivisor;
+        currentWorkDerivedAnxiety = ((float)currentWorkHesitation + (float)currentWorkUncertainty + (float)currentWorkStress + (float)currentWorkEmbarrassment) / emotionConfig.anxietyDivisor;
+        currentWorkDerivedConfidence = ((float)currentWorkConfidence + (float)currentWorkEnergy + (float)currentWorkPassionate + (float)currentWorkBrainPower) / emotionConfig.confidenceDivisor;
+
+        // クランプ処理はそのまま
+        currentWorkDerivedJoy = Mathf.Clamp01(currentWorkDerivedJoy);
+        currentWorkDerivedAnger = Mathf.Clamp01(currentWorkDerivedAnger);
+        currentWorkDerivedSadness = Mathf.Clamp01(currentWorkDerivedSadness);
+        currentWorkDerivedEnjoyment = Mathf.Clamp01(currentWorkDerivedEnjoyment);
+        currentWorkDerivedFocus = Mathf.Clamp01(currentWorkDerivedFocus);
+        currentWorkDerivedAnxiety = Mathf.Clamp01(currentWorkDerivedAnxiety);
+        currentWorkDerivedConfidence = Mathf.Clamp01(currentWorkDerivedConfidence);
+
+        Debug.Log($"Derived Emotions: Joy={currentWorkDerivedJoy:F2}, Anger={currentWorkDerivedAnger:F2}, Sadness={currentWorkDerivedSadness:F2}, Enjoyment={currentWorkDerivedEnjoyment:F2}, Focus={currentWorkDerivedFocus:F2}, Anxiety={currentWorkDerivedAnxiety:F2}, Confidence={currentWorkDerivedConfidence:F2}");
+    }
     
+    private void MapEmotionsToModelParameters()
+    {
+        currentWorkParameterA = currentWorkDerivedJoy;
+        currentWorkParameterB = currentWorkDerivedAnger;
+        currentWorkParameterC = currentWorkDerivedSadness;
+        currentWorkParameterD = currentWorkDerivedEnjoyment;
+        currentWorkParameterE = currentWorkDerivedFocus;
+        currentWorkParameterF = currentWorkDerivedAnxiety;
+        currentWorkParameterG = currentWorkDerivedConfidence;
+
+        // ★★★ 修正点: ハードコードされた係数をConfigアセットから取得 ★★★
+        currentWorkEnlargeFactorA = 1.0f + currentWorkDerivedJoy * emotionConfig.joyEnlargeFactor;
+        currentWorkEnlargeFactorB = 1.0f + currentWorkDerivedAnger * emotionConfig.angerEnlargeFactor;
+        currentWorkEnlargeFactorC = 1.0f + currentWorkDerivedSadness * emotionConfig.sadnessEnlargeFactor;
+        currentWorkEnlargeFactorD = 1.0f + currentWorkDerivedEnjoyment * emotionConfig.enjoymentEnlargeFactor;
+        currentWorkEnlargeFactorE = 1.0f + currentWorkDerivedFocus * emotionConfig.focusEnlargeFactor;
+        currentWorkEnlargeFactorF = 1.0f + currentWorkDerivedAnxiety * emotionConfig.anxietyEnlargeFactor;
+        currentWorkEnlargeFactorG = 1.0f + currentWorkDerivedConfidence * emotionConfig.confidenceEnlargeFactor;
+     }
+
+    // (以降のメソッドは、上記の修正以外に変更はありません)
     #region APIからのデータ受信とモデル生成
-    /// <summary>
-    /// APIからのJSONデータを受け取り、感情パラメータを更新してモデルを変化させます。
-    /// </summary>
     public void SetParametersFromJson(string jsonData)
     {
         bool validDataReceived = false;
@@ -292,7 +322,6 @@ public class GameController : MonoBehaviour
             SentimentAnalysisResponse response = JsonUtility.FromJson<SentimentAnalysisResponse>(jsonData);
             if (response?.sentiment_analysis?.segments != null && response.sentiment_analysis.segments.Count > 0)
             {
-                // APIからの感情値を現在の作業値に加算
                 foreach (SentimentSegment seg in response.sentiment_analysis.segments)
                 {
                     currentWorkEnergy += seg.energy; currentWorkContent += seg.content; currentWorkUpset += seg.upset;
@@ -332,49 +361,7 @@ public class GameController : MonoBehaviour
             if (mainUIManager != null) mainUIManager.UpdateWorkSentimentUI(CreateSceneDataFromCurrentWork());
         }
     }
-
-    private void CalculateDerivedEmotions()
-    {
-        currentWorkDerivedJoy = ((float)currentWorkContent + (float)currentWorkExcitement + (float)currentWorkPassionate + Mathf.Max(0, currentWorkAtmosphere) + (float)currentWorkAnticipation) / 500.0f;
-        currentWorkDerivedAnger = ((float)currentWorkAggression + (float)currentWorkUpset + (float)currentWorkStress + (float)currentWorkExtremeEmotion) / 400.0f;
-        currentWorkDerivedSadness = ((float)currentWorkDissatisfaction + Mathf.Max(0, -currentWorkAtmosphere) + (float)currentWorkUncertainty + (100.0f - (float)currentWorkEnergy) / 2.0f) / 450.0f;
-        currentWorkDerivedEnjoyment = ((float)currentWorkExcitement + (float)currentWorkAnticipation + (float)currentWorkImaginationActivity + (float)currentWorkEnergy) / 400.0f;
-        float logicalScore = Mathf.Max(0, currentWorkEmoCog - 100);
-        currentWorkDerivedFocus = ((float)currentWorkConcentration + (float)currentWorkIntensiveThinking + (float)currentWorkBrainPower + logicalScore) / 400.0f;
-        currentWorkDerivedAnxiety = ((float)currentWorkHesitation + (float)currentWorkUncertainty + (float)currentWorkStress + (float)currentWorkEmbarrassment) / 400.0f;
-        currentWorkDerivedConfidence = ((float)currentWorkConfidence + (float)currentWorkEnergy + (float)currentWorkPassionate + (float)currentWorkBrainPower) / 400.0f;
-
-        currentWorkDerivedJoy = Mathf.Clamp01(currentWorkDerivedJoy);
-        currentWorkDerivedAnger = Mathf.Clamp01(currentWorkDerivedAnger);
-        currentWorkDerivedSadness = Mathf.Clamp01(currentWorkDerivedSadness);
-        currentWorkDerivedEnjoyment = Mathf.Clamp01(currentWorkDerivedEnjoyment);
-        currentWorkDerivedFocus = Mathf.Clamp01(currentWorkDerivedFocus);
-        currentWorkDerivedAnxiety = Mathf.Clamp01(currentWorkDerivedAnxiety);
-        currentWorkDerivedConfidence = Mathf.Clamp01(currentWorkDerivedConfidence);
-
-        Debug.Log($"Derived Emotions: Joy={currentWorkDerivedJoy:F2}, Anger={currentWorkDerivedAnger:F2}, Sadness={currentWorkDerivedSadness:F2}, Enjoyment={currentWorkDerivedEnjoyment:F2}, Focus={currentWorkDerivedFocus:F2}, Anxiety={currentWorkDerivedAnxiety:F2}, Confidence={currentWorkDerivedConfidence:F2}");
-    }
-    
-    private void MapEmotionsToModelParameters()
-    {
-        currentWorkParameterA = currentWorkDerivedJoy;
-        currentWorkParameterB = currentWorkDerivedAnger;
-        currentWorkParameterC = currentWorkDerivedSadness;
-        currentWorkParameterD = currentWorkDerivedEnjoyment;
-        currentWorkParameterE = currentWorkDerivedFocus;
-        currentWorkParameterF = currentWorkDerivedAnxiety;
-        currentWorkParameterG = currentWorkDerivedConfidence;
-
-        currentWorkEnlargeFactorA = 1.0f + currentWorkDerivedJoy * 1.0f;
-        currentWorkEnlargeFactorB = 1.0f + currentWorkDerivedAnger * 1.0f;
-        currentWorkEnlargeFactorC = 1.0f + currentWorkDerivedSadness * 1.0f;
-        currentWorkEnlargeFactorD = 1.0f + currentWorkDerivedEnjoyment * 1.0f;
-        currentWorkEnlargeFactorE = 1.0f + currentWorkDerivedFocus * 0.5f;
-        currentWorkEnlargeFactorF = 1.0f + currentWorkDerivedAnxiety * 1.0f;
-        currentWorkEnlargeFactorG = 1.0f + currentWorkDerivedConfidence * 1.0f;
-     }
     #endregion
-
     #region オブジェクト生成・操作
     void GenerateAllModels()
     {
@@ -485,7 +472,6 @@ public class GameController : MonoBehaviour
         }
     }
     #endregion
-    
     #region データ管理（保存、ロード、リセット）
     void SaveCurrentWorkStateToFile()
     {
@@ -578,7 +564,6 @@ public class GameController : MonoBehaviour
                 }
             }
 
-            // メインオブジェクトが復元された後に、それにアタッチするモデルを復元
             if(mainObjectRestored)
             {
                 foreach (SavedObjectData objData in data.objects)
@@ -750,7 +735,6 @@ public class GameController : MonoBehaviour
         MapEmotionsToModelParameters();
     }
     #endregion
-    
     #region ヘルパーメソッド
     GameObject RandomModel(GameObject[] modelPrefabs)
     {
