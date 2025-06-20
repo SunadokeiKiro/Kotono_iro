@@ -1,39 +1,57 @@
-using UnityEngine;
+// Scripts/KukuScripts/ApiResponseDefinishons.cs
 using System;
 using System.Collections.Generic;
 
+// このファイルは、AmiVoice APIからのJSONレスポンスをC#のクラスにマッピングするためのデータ構造を定義します。
+// UnityのJsonUtilityでデシリアライズするために、各クラスには[Serializable]属性が付与されています。
+
+/// <summary>
+/// 音声認識リクエスト直後のレスポンス。非同期処理のセッションIDを含みます。
+/// </summary>
 [Serializable]
 public class RecognitionResponse
 {
-    public string sessionid; // JSON内の "sessionid" と一致させる
-    public string text;      // 完了時に認識されたテキスト
+    public string sessionid;
+    public string text; // 同期認識の場合のテキスト
 }
 
+/// <summary>
+/// ポーリング時に受け取る、感情分析を含む解析結果の完全なレスポンス。
+/// </summary>
 [Serializable]
-public class SentimentAnalysisResponse {
-    public string status;
+public class SentimentAnalysisResponse 
+{
+    public string status; // "completed", "processing", "error"など
     public string session_id;
     public string service_id;
     public int audio_size;
     public string audio_md5;
     public List<Segment> segments;
     public string utteranceid;
-    public string text;
-    public string code;
-    public string message;
+    public string text; // 全体の認識結果テキスト
+    public string code; // エラーコード
+    public string message; // エラーメッセージ
     public SentimentAnalysis sentiment_analysis;
 }
 
+/// <summary>
+/// 発話の区間ごとの認識結果。
+/// </summary>
 [Serializable]
-public class Segment {
+public class Segment 
+{
     public List<Result> results;
-    public string text;
+    public string text; // このセグメントの認識結果テキスト
 }
 
+/// <summary>
+/// 認識結果の詳細。信頼度や単語リストなどを含みます。
+/// </summary>
 [Serializable]
-public class Result {
+public class Result 
+{
     public List<Token> tokens;
-    public float confidence; // この confidence は float のままが適切と思われます
+    public float confidence;
     public int starttime;
     public int endtime;
     public List<string> tags;
@@ -41,60 +59,54 @@ public class Result {
     public string text;
 }
 
+/// <summary>
+/// 個々の単語（トークン）ごとの情報。
+/// </summary>
 [Serializable]
-public class Token {
-    public string written;
-    public float confidence; // この confidence も float のままが適切と思われます
+public class Token 
+{
+    public string written; // 書字形 (例: "今日")
+    public float confidence;
     public int starttime;
     public int endtime;
-    public string spoken;
+    public string spoken; // 話し言葉形 (例: "きょう")
 }
 
+/// <summary>
+/// 感情分析結果のルートオブジェクト。
+/// </summary>
 [Serializable]
-public class SentimentAnalysis {
+public class SentimentAnalysis 
+{
     public List<SentimentSegment> segments;
 }
 
+/// <summary>
+/// 区間ごとの詳細な感情分析結果。
+/// </summary>
 [Serializable]
-public class SentimentSegment {
+public class SentimentSegment 
+{
     public int starttime;
     public int endtime;
-    public int energy; // float から int に変更
-    public int content; // float から int に変更
-    public int upset; // float から int に変更
-    public int aggression; // float から int に変更
-    public int stress; // float から int に変更
-    public int uncertainty; // float から int に変更
-    public int excitement; // float から int に変更
-    public int concentration; // float から int に変更
-    public int emo_cog; // float から int に変更
-    public int hesitation; // float から int に変更
-    public int brain_power; // float から int に変更
-    public int embarrassment; // float から int に変更
-    public int intensive_thinking; // float から int に変更
-    public int imagination_activity; // float から int に変更
-    public int extreme_emotion; // float から int に変更
-    public int passionate; // float から int に変更
-    public int atmosphere; // float から int に変更
-    public int anticipation; // float から int に変更
-    public int dissatisfaction; // float から int に変更
-    public int confidence; // float から int に変更
-}
-
-public class SerializableExample : MonoBehaviour
-{
-    // このクラスはサンプルとして作成しています。必要に応じて他のスクリプトと連携してください。
-
-    void Start()
-    {
-        // 例: JsonUtility.FromJson を使ったデシリアライズ
-        // string jsonResponse = ...; // APIからのJSON文字列
-        // RecognitionResponse response = JsonUtility.FromJson<RecognitionResponse>(jsonResponse);
-        // Debug.Log("Session ID: " + response.sessionid);
-    }
-
-    void Update()
-    {
-        // フレームごとの処理が必要な場合に記述
-    }
+    public int energy;
+    public int content;
+    public int upset;
+    public int aggression;
+    public int stress;
+    public int uncertainty;
+    public int excitement;
+    public int concentration;
+    public int emo_cog; // 感情優位か思考優位かのバランス
+    public int hesitation;
+    public int brain_power;
+    public int embarrassment;
+    public int intensive_thinking;
+    public int imagination_activity;
+    public int extreme_emotion;
+    public int passionate;
+    public int atmosphere; // 明るい/暗い
+    public int anticipation;
+    public int dissatisfaction;
+    public int confidence;
 }

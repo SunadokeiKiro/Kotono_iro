@@ -1,22 +1,33 @@
-using TMPro;
+// Scripts/DayText.cs
 using UnityEngine;
-using UnityEngine.UI; //Textを使用する為追加。
-using System; //DateTimeを使用する為追加。
+using TMPro; // TextMeshProを使用するために必要
+using System; // DateTimeを使用するために必要
 
-public class Daytext : MonoBehaviour
+/// <summary>
+/// TextMeshProのUIに現在の日付（年 / 月 / 日）をリアルタイムで表示します。
+/// </summary>
+public class DayText : MonoBehaviour // クラス名をファイル名と一致させるため "Daytext" -> "DayText" に変更
 {
-    //テキストUIをドラッグ&ドロップ
-    [SerializeField] TextMeshProUGUI DateTimeText;
+    [Tooltip("日付を表示するTextMeshProコンポーネント")]
+    [SerializeField]
+    private TextMeshProUGUI dateTimeText;
 
-    //DateTimeを使うため変数を設定
-    DateTime TodayNow;
+    void Start()
+    {
+        // 参照が設定されていない場合のエラーチェック
+        if (dateTimeText == null)
+        {
+            Debug.LogError("DateTimeText is not assigned in the inspector.", this.gameObject);
+            // 参照がないと動作しないため、このコンポーネントを無効化
+            this.enabled = false;
+        }
+    }
 
     void Update()
     {
-        //時間を取得
-        TodayNow = DateTime.Now;
+        DateTime today = DateTime.Now;
 
-        //テキストUIに年・月・日を表示させる
-        DateTimeText.text = TodayNow.Year.ToString() + " / " + TodayNow.Month.ToString() + " / " + TodayNow.Day.ToString();
+        // テキストUIに年・月・日を表示
+        dateTimeText.text = $"{today.Year} / {today.Month} / {today.Day}";
     }
 }
